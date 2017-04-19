@@ -2,7 +2,7 @@
  *  | RUS | - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  
  *    «Komunikator» – Web-интерфейс для настройки и управления программной IP-АТС «YATE»
- *    Copyright (C) 2012-2013, ООО «Телефонные системы»
+ *    Copyright (C) 2012-2017, ООО «Телефонные системы»
  
  *    ЭТОТ ФАЙЛ является частью проекта «Komunikator»
  
@@ -27,7 +27,7 @@
  *  | ENG | - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  
  *    "Komunikator" is a web interface for IP-PBX "YATE" configuration and management
- *    Copyright (C) 2012-2013, "Telephonnyie sistemy" Ltd.
+ *    Copyright (C) 2012-2017, "Telephonnyie sistemy" Ltd.
  
  *    THIS FILE is an integral part of the project "Komunikator"
  
@@ -63,7 +63,7 @@ Ext.define('app.Viewport', {
             margins: '0 0 5 0'
         }, {
             region: 'south', // низ
-            title: '<div style="text-align : center"><p style="font-size : 8pt">' + app.msg.copyright + '</p></div>', // Komunikator Copyright (C) 2012-2013, ООО «Телефонные системы»
+            title: '<div style="text-align : center"><p style="font-size : 8pt">' + app.msg.copyright + '</p></div>', // Komunikator Copyright (C) 2012-2017, ООО «Телефонные системы»
             border: false,
             margins: '10 0 10 0'
         }, {
