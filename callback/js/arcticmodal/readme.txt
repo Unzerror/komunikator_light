@@ -1,1 +1,0 @@
-Документация и примеры: http://arcticlab.ru/arcticmodal/

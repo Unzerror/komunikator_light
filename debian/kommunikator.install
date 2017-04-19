@@ -1,4 +1,0 @@
-debian/tmp/var/www/*
-debian/tmp/var/lib/misc/*
-debian/tmp/usr/*
-debian/tmp/etc/*
