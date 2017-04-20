@@ -63,7 +63,7 @@ $total = compact_array(query_to_array("select ((SELECT count(*) FROM groups) + (
 if (!is_array($total["data"]))
     echo out(array("success" => false, "message" => $total));
 
-$data = compact_array(query_to_array("SELECT group_id as id, groups.group as name FROM groups union SELECT extension_id as id, extension as name from extensions " . get_sql_order_limit()));
+$data = compact_array(query_to_array("SELECT groups.group_id as id, groups.group as name FROM groups union SELECT extensions.extension_id as id, extensions.extension as name from extensions " . get_sql_order_limit()));
 //file_put_contents("test.txt","SELECT group_id as id, \"group\", description, extension FROM groups ORDER BY ".get_sql_order_limit());
 
 if (!is_array($data["data"]))

@@ -56,7 +56,7 @@
 
 // sleep(10);
 
-if (!$_SESSION['user'] && !$_SESSION['extension']) {
+if (!isset($_SESSION['user']) && !isset($_SESSION['extension'])) {
     echo (out(array("success" => false, "message" => "auth_failed")));
     exit;
 }
@@ -71,7 +71,7 @@ EOD;
 
 if ($_SESSION['extension']) {
     $exten = $_SESSION['extension'];
-    $param = (get_filter() == '') ? 'WHERE' : 'AND';
+    $param = (get_filter() == '') ? 'WHERE' : ' AND ';
     $call = " ( caller LIKE '%($exten)%' OR called LIKE '%($exten)%')";
     $query = $param . $call;
 }
