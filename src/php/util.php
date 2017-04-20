@@ -281,6 +281,13 @@ function parseExtJSFilters() {
     return false;
 }
 
+function new_keys_SQL ($old_keys) {
+    global $table_name;
+    global $conn;
+    $new_keys = $conn->escapeSimple(get_sql_field($table_name.'.'.$old_keys));
+    return $new_keys;
+}
+
 $macro_sql = array(
     'caller_called1' => ' a.caller, b.called, ',
     'caller_called' =>

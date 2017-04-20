@@ -53,9 +53,8 @@
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
 
- 
-$default_ip = "ssl://127.0.0.1";	//	ip address where yate runs
-$default_port = "5039";	// port used to connect to
+$default_ip = 'ssl://127.0.0.1:5039';
+$timeout = 30;
 
 // class used to open a socket, send and receive information from it
 class SocketConn
@@ -72,13 +71,19 @@ class SocketConn
 		if(!in_array("ssl", $protocol_list))
 			die("Don't have ssl support.");
 
-		if(!$ip)
-			$ip = $default_ip;
-		if(!$port)
-			$port = $default_port;
+		$contextOptions = array(
+         'ssl' => array(
+               'verify_peer' => true,
+               'cafile' => '/etc/yate/keys/komunikator.crt',        
+               'ciphers' => 'HIGH:!SSLv2:!SSLv3',
+               'disable_compression' => true,
+          )
+        );
+
+		$context = stream_context_create($contextOptions);
 
 		$errno = 0;
-		$socket = fsockopen($ip,$port,$errno,$errstr,30);
+		$socket = stream_socket_client($default_ip, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
 		if(!$socket) {
 			$this->error = "Web page can't connect to ip=$ip, port=$port [$errno]  \"".$errstr."\"";
 			$this->socket = false;
@@ -113,15 +118,6 @@ class SocketConn
 		fclose($this->socket);
 	}
 
-	/**
-		Commands
-		status
-		uptime
-		reload
-		restart
-		stop
-		.... -> will be mapped into an engine.command
-	 */
 	function command($command, $marker_end = "\r\n")
 	{
 		$this->write($command);

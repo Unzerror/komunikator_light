@@ -88,7 +88,7 @@ if (in_array($action, array('get_call_button', 'create_call_button', 'destroy_ca
 
     $dsn = $db_type_sql . ":///" . $db_sqlite3_path;
 } else {
-    $db_type_sql = "mysql";
+    $db_type_sql = "mysqli";
 
     $db_host = "localhost";
     $db_user = "kommunikator";
@@ -113,7 +113,13 @@ if (in_array($action, array('get_call_button', 'create_call_button', 'destroy_ca
 // - - - - -  старый вариант (КОНЕЦ)  - - - - -
 
 
-$conn = DB::connect($dsn);
+//$conn = DB::connect($dsn); 
+$conn = new DB();
+$conn = $conn->connect($dsn);
+if ($conn->isError($conn)) {
+    die($conn->message.'<br>'.$conn->userinfo);
+}
+
 $debug_info = true;
 
 if (PEAR::isError($conn)) {
@@ -133,6 +139,7 @@ $no_pbx = false;
 $uploaded_prompts = "/var/lib/misc";
 $query_on = false;
 $max_resets_conn = 5;
+$yate_stderr = "";
 
 //$calls_email  = "root@localhost"; 
 //$fax_call = "root@localhost";

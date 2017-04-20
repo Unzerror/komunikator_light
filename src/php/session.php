@@ -64,10 +64,10 @@ if (isset($_GET['lang']))
 if (!isset($_SESSION['lang']))
     $_SESSION['lang'] = 'ru';
 
-if ($_ENV["HTTP_X_FORWARDED_FOR"])
-    $_SESSION["ip"] = $_ENV["HTTP_X_FORWARDED_FOR"] . ":" . $_SERVER["REMOTE_ADDR"];
-else
+if (empty($_ENV["HTTP_X_FORWARDED_FOR"]))
     $_SESSION["ip"] = $_SERVER["REMOTE_ADDR"];
+else
+    $_SESSION["ip"] = $_ENV["HTTP_X_FORWARDED_FOR"] . ":" . $_SERVER["REMOTE_ADDR"];
 $_SESSION["lasttime"] = date("d.m.Y H:i:s");
 
 
