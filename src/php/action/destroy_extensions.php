@@ -70,6 +70,10 @@ foreach ($data as $row) {
         $values[$key] = $value;
     $rows[] = $values;
 }
+query_nores("DELETE FROM group_members WHERE extension_id = $value");
+query_nores("DELETE FROM group_priority WHERE extension_id = $value");
+query_nores("DELETE FROM pbx_settings WHERE extension_id = $value");
+
 $id_name = 'extension_id';
 require_once("destroy.php");
 ?>

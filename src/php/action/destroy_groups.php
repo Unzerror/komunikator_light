@@ -68,6 +68,9 @@ foreach ($data as $row) {
         $values[$key] = $value;
     $rows[] = $values;
 }
+query_nores("DELETE FROM group_members WHERE group_id = $value");
+query_nores("DELETE FROM group_priority WHERE group_id = $value");
+
 $id_name = 'group_id';
 require_once("destroy.php");
 ?>
