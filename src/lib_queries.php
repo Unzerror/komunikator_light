@@ -58,8 +58,8 @@ function query_to_array($query) {
     $time = start_debug_req_time();
     $array  = $conn->getAll($query);
     stop_debug_req_time($time, $query);
-    Yate::Output("Executed: $query");
-    Yate::Output("Result:".json_encode($array));
+    //Yate::Output("Executed: $query");
+    //Yate::Output("Result:".json_encode($array));
     //$res->free();
     return $array;
 }
@@ -75,7 +75,7 @@ function query($query) {
             $res = $conn->query($query);
             stop_debug_req_time($time, $query);
         }
-        /*
+        
         if(!$res) {
             while(true) {
                 if($resets >= ($max_resets_conn-1)) {
@@ -91,7 +91,7 @@ function query($query) {
                 }else
                     $resets = $max_resets_conn;
             }
-        }else    */
+        }else    
             break; 
     } 
     if($query_on)
