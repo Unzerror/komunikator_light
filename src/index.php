@@ -84,7 +84,7 @@ session_start();
     <meta name="msapplication-square310x310logo" content="mstile-310x310.png" />
     <meta name="application-name" content="Komunikator"/>
     <meta name="msapplication-TileColor" content="#ffffff"/>
-    <? require_once ('php/session.php');?>
+    <?php require_once ('php/session.php');?>
     <script type="text/javascript" src="js/app.js"></script>
     </head>
 </html>

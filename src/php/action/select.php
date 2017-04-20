@@ -53,7 +53,7 @@
 *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 */
 
-?><?
+
 // deprecated
 /*
   $table_name = get_sql_field(next(explode('_',$action,2)));

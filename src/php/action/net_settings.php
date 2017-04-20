@@ -52,7 +52,7 @@
 
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
-?><?php
+php
 
         const NETCONFIG_FILE = '/etc/network/interfaces';
 
