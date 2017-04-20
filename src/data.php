@@ -52,7 +52,7 @@
 
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
-?><?php
+
 
 //ini_set('session.save_path', $_SERVER['DOCUMENT_ROOT'] .'/tmp/');
 //ini_set('session.gc_maxlifetime', 2592000);  // 30 day

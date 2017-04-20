@@ -52,7 +52,7 @@
 
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
-?><?php
+ 
 
 if (!$_SESSION['user']) {
     echo (out(array("success" => false, "message" => "User is undefined")));
