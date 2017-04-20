@@ -52,9 +52,8 @@
 
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
- 
-
-$table_name = get_sql_field(next(explode('_', $action, 2)));
+$tbl = explode('_', $action, 2);
+$table_name = get_sql_field(next($tbl));
 
 if (!$id_name)
     $id_name = 'id';

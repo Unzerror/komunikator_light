@@ -54,7 +54,9 @@
  */
  
 
-$table_name = get_sql_field(next(explode('_', $action, 2)));
+//$table_name = get_sql_field(next(explode('_', $action, 2)));
+$tbl = explode('_', $action, 2);
+$table_name = get_sql_field(next($tbl));
 
 if (!$id_name)
     $id_name = 'id';
@@ -72,7 +74,7 @@ foreach ($rows as $row) {
         $sql = sprintf("DELETE FROM %s WHERE %s=%s", $table_name, $id_name, $id);
         query($sql);
 
-        if ($db_type_sql == "mysql") {
+        if ($db_type_sql == "mysqli") {
             $sql = "INSERT INTO actionlogs (date, performer, query, ip) VALUES (" . time() . ",\"{$_SESSION['user']}\",\"$sql\", \"{$_SERVER['REMOTE_ADDR']}\")";
             query($sql);
         }

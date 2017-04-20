@@ -53,14 +53,14 @@
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
  
-
-$table_name = get_sql_field(next(explode('_', $action, 2)));
+$tbl = explode('_', $action, 2);
+$table_name = get_sql_field(next($tbl));
 
 foreach ($rows as $row) {
-    $sql = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table_name, implode(', ', array_map($conn->escapeSimple, array_map('get_sql_field', array_keys($row)))), implode(', ', array_map($conn->escapeSimple, $row)));
+    $sql = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table_name, implode(', ', array_map('new_keys_SQL', array_keys($row))), implode(', ', $row));
     query($sql);
 
-    if ($db_type_sql == "mysql") {
+    if ($db_type_sql == "mysqli") {
         $sql = "INSERT INTO actionlogs (date, performer, query, ip) VALUES (" . time() . ", \"{$_SESSION['user']}\", \"$sql\", \"{$_SERVER['REMOTE_ADDR']}\")";
         query($sql);
     }
