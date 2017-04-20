@@ -78,9 +78,9 @@ if ($password)
     $password = $conn->escapeSimple($password);
 
 if ($password && ($username || $extension)) {
-    session_start();
+    //session_start();
     $_SESSION = array();
-//echo ($extension);
+    //echo ($extension);
     if ($username) {        
         $sql = "SELECT * from users where username = '$username' and password = '$password'";
         if (query_to_array($sql)) {
@@ -108,8 +108,8 @@ if ($password && ($username || $extension)) {
             $out['extension'] = $_SESSION['extension'];
         echo (out($out));
     }
-    else {
-        $sql = "insert into actionlogs (date,performer,log,ip) values (" . time() . ",\"{$_SESSION['user']}\",\"failled attempt to log in as unknown : $extension$username\", \"{$_SERVER['REMOTE_ADDR']}\")";
+    else {        
+        $sql = "insert into actionlogs (date,performer,log,ip) values (" . time() . ",\"{$username}\",\"failled attempt to log in as unknown : $extension\", \"{$_SERVER['REMOTE_ADDR']}\")";
         query($sql);
         echo (out(array("success" => false, "message" => "auth_failed")));
     }

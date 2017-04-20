@@ -54,8 +54,10 @@
  */
  
 
-session_start();
-$sql = "insert into actionlogs (date,performer,log,ip) values (" . time() . ",\"{$_SESSION['user']}\",\"{$_SESSION['user']} logout\", \"{$_SERVER['REMOTE_ADDR']}\")";
+//session_start();
+$s_user =  ( isset($_SESSION['user']) ? $_SESSION['user'] : $_SESSION['extension']);
+
+$sql = "insert into actionlogs (date,performer,log,ip) values (" . time() . ",\"{$s_user}\",\"{$s_user} logout\", \"{$_SERVER['REMOTE_ADDR']}\")";
 query($sql);
 
 echo (out(array("success" => session_destroy())));

@@ -56,10 +56,17 @@
 
 need_user();
 
-$out = shell_exec('sudo service yate restart');
-//exec('sudo /etc/init.d/yate restart',$out);
-//sleep (3);
-$obj = array("success" => true);
-$obj["message"] = $out;
+require_once("php/socketconn.php");
+$socket = new SocketConn;
+if ($socket -> error == "") {
+     $socket -> command('restart now');
+     $obj = array("success" => true);    
+} else {
+    $obj = array("success" => false);
+    $obj['message'] = "Ошибка соединения";    
+}
+$socket->close();
+sleep (9);
+
 echo out($obj);
 ?>
