@@ -52,7 +52,7 @@
 
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
-
+?><?
 
 if (!$_SESSION["extension"]) {
     echo (out(array("success" => false, "message" => "Extension is undefined")));

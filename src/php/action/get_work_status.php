@@ -52,7 +52,7 @@
 
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
-
+?><?
 
 header("Content-Type: application/javascript");
 $callback = $_GET["callback"];

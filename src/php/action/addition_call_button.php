@@ -53,7 +53,7 @@
 *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 */
 
-
+?><?
 if ($sda_action == 'start' or $sda_action == 'stop') {
 
     if ($sda_action == 'start') { $sda_command = '/etc/webrtc2sip/scripts/start_webrtc2sip.sh'; }

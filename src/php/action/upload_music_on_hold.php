@@ -52,7 +52,7 @@
 
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
-php
+?><?php
 
 /**
  * Example processing of raw PUT/POST uploaded files - with hint, how to save the uploaded file.

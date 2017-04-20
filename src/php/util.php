@@ -53,7 +53,7 @@
 *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 */
 
-php
+?><?php
 
 function need_user() {
     if (!$_SESSION['user'] && !$_SESSION['extension']) {
