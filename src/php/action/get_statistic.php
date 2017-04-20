@@ -200,8 +200,8 @@ function get_userdata($name) {
 }
 
 function set_userdata($ar) {
-    session_start();
-    if (!$_SESSION['userdata'])
+    //session_start();
+    if (!isset($_SESSION['userdata']))
         $_SESSION['userdata'] = array();
     foreach ($ar as $key => $value)
         $_SESSION['userdata'][$key] = $value;
@@ -210,19 +210,27 @@ function set_userdata($ar) {
 function get_cpu() {
     $file = file("/proc/stat");
     $tmp = explode(" ", $file[0]);
-    $cpu_user_old = get_userdata("cpu_user");
-    $cpu_nice_old = get_userdata("cpu_nice");
-    $cpu_sys_old = get_userdata("cpu_sys");
-    $cpu_idle_old = get_userdata("cpu_idle");
-    $cpu_io_old = get_userdata("cpu_io");
+
     $cpu_user = $tmp[2];
     $cpu_nice = $tmp[3];
     $cpu_sys = $tmp[4];
     $cpu_idle = $tmp[5];
     $cpu_io = $tmp[6];
-    $diff_used = ($cpu_user - $cpu_user_old) + ($cpu_nice - $cpu_nice_old) + ($cpu_sys - $cpu_sys_old) + ($cpu_io - $cpu_io_old);
-    $diff_total = ($cpu_user - $cpu_user_old) + ($cpu_nice - $cpu_nice_old) + ($cpu_sys - $cpu_sys_old) + ($cpu_io - $cpu_io_old) + ($cpu_idle - $cpu_idle_old);
-    $cpu = $diff_used / $diff_total * 100;
+    
+    if ( isset($_SESSION['userdata'])) {
+        $cpu_user_old = get_userdata("cpu_user");
+        $cpu_nice_old = get_userdata("cpu_nice");
+        $cpu_sys_old = get_userdata("cpu_sys");
+        $cpu_idle_old = get_userdata("cpu_idle");
+        $cpu_io_old = get_userdata("cpu_io");
+
+        $diff_used = ($cpu_user - $cpu_user_old) + ($cpu_nice - $cpu_nice_old) + ($cpu_sys - $cpu_sys_old) + ($cpu_io - $cpu_io_old);
+        $diff_total = ($cpu_user - $cpu_user_old) + ($cpu_nice - $cpu_nice_old) + ($cpu_sys - $cpu_sys_old) + ($cpu_io - $cpu_io_old) + ($cpu_idle - $cpu_idle_old);
+        
+        $cpu = $diff_used / $diff_total * 100;
+    }else 
+        $cpu = 0;
+
     set_userdata(array("cpu_user" => $cpu_user, "cpu_nice" => $cpu_nice, "cpu_sys" => $cpu_sys, "cpu_idle" => $cpu_idle, "cpu_io" => $cpu_io));
     return $cpu;
 }
@@ -325,7 +333,7 @@ function get_active_user($name = 'user') {
     return $i;
 }
 
-echo $i;
+//echo $i;
 
 function get_yate_version() {
     exec('yate --version', $ver);
