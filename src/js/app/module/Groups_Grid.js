@@ -54,25 +54,12 @@
 Ext.define('app.module.Groups_Grid', {
     extend: 'app.Grid',
     store_cfg: {
-        fields: ['id', 'group', 'description', 'extension'],
+        fields: ['id', 'extension', 'description', 'group'],
         storeId: 'groups'
     },
     columns: [
         {// 'id'
             hidden: true
-        },
-        {// 'group'
-            width: 150,
-            editor: {
-                xtype: 'textfield',
-                allowBlank: false
-            }
-        },
-        {// 'description'
-            width: 150,
-            editor: {
-                xtype: 'textfield'
-            }
         },
         {// 'extension'
             width: 150,
@@ -81,8 +68,20 @@ Ext.define('app.module.Groups_Grid', {
                 regex: /^\d{2}$/,
                 allowBlank: false
             }
+        },        
+        {// 'description'
+            width: 150,
+            editor: {
+                xtype: 'textfield'
+            }
+        },
+        {// 'group'
+            width: 150,
+            editor: {
+                xtype: 'textfield',
+                allowBlank: false
+            }
         }
-
     ],
     initComponent: function() {
         // this.title = app.msg.extensions;
