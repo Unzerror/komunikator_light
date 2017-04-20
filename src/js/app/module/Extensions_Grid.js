@@ -57,8 +57,8 @@ Ext.define('app.module.Extensions_Grid', {
         autorefresh: false,
         loadmask: true,
         //для отображения ВСЕХ столбцов переадресации
-        // fields: ['id', 'status', 'extension', 'password', 'firstname', 'lastname', 'address', 'group_name', 'priority', 'forward', 'forward_busy', 'forward_noanswer', 'noanswer_timeout'],
-        fields: ['id', 'status', 'extension', 'password', 'firstname', 'lastname', 'address', 'group_name', 'priority', 'forward'],
+        fields: ['id', 'status', 'extension', 'password', 'firstname', 'lastname', 'address', 'group_name', 'priority', 'forward', 'forward_busy', 'forward_noanswer', 'noanswer_timeout'],
+        //fields: ['id', 'status', 'extension', 'password', 'firstname', 'lastname', 'address', 'group_name', 'priority', 'forward'],
         storeId: 'extensions',
         sorters: [{
                 direction: 'DESC',
@@ -129,14 +129,14 @@ Ext.define('app.module.Extensions_Grid', {
 
             ]
         },
-        {
+        /*{
             //столбец необходим для верного отображени данных, пока не отображаются
             // ВСЕ столбцы переадресации, после их возвращения, данный столбец можно удалить
             hidden: true
-        },
+        },*/
         {
             /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-             заменить на этот код, для отображения ВСЕХ столбцов переадресации
+             заменить на этот код, для отображения ВСЕХ столбцов переадресации*/
              // Переадресация ( Всегда, Номер занят, Нет ответа, Таймаут (сек) )
              header: app.msg.forward,
              dataIndex: 'forward',
@@ -161,7 +161,7 @@ Ext.define('app.module.Extensions_Grid', {
              regex: /^\d{1,3}$/
              }
              }]
-             - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+             /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
         }
 
@@ -332,7 +332,7 @@ Ext.define('app.module.Extensions_Grid', {
                 return app.msg.voicemail;
             return value;
         };
-        /*для отображения ВСЕХ столбцов переадресации, следует раскомментировать
+        /*для отображения ВСЕХ столбцов переадресации, следует раскомментировать*/
          this.columns[8] = {
          text: app.msg.forward,
          groupable: false,
@@ -371,17 +371,17 @@ Ext.define('app.module.Extensions_Grid', {
          }
          ]
          };
-         */
+         
 
 //если код выше требуется раскомментировать, данную часть следует удалить - - -
-        this.columns[9] = {
+        /*this.columns[9] = {
             text: app.msg.forward,
             editor: this.forward_editor,
             renderer: this.forward_renderer,
             dataIndex: 'forward',
             width: 120
 
-        };
+        };*/
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
         this.callParent(arguments);
@@ -404,13 +404,14 @@ Ext.define('app.module.Extensions_Grid', {
                             store.autorefresh = false;
                         console.log('ERROR: ' + store.storeId + ' fail_load [code of Extensions_Grid.js]');
                     }
+                    /* так и не понял что грузим
                     var repository_exists = Ext.StoreMgr.lookup('extensions_list');
                     if (repository_exists) {
                         repository_exists.load();
                     }
                     else
                         console.log('ERROR: extensions_list - fail_load [code of Extensions_Grid.js]');
-                    
+                    */
                     var storeGroupNumbers = Ext.StoreMgr.lookup('sources_exception');
                     if (storeGroupNumbers)
                         storeGroupNumbers.load();                   
