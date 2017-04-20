@@ -52,67 +52,69 @@
 
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
- 
 
 need_user();
 
-$input = file_get_contents("php://input"); 
+//$data = json_decode($HTTP_RAW_POST_DATA);
+$input = file_get_contents("php://input");
 $data = json_decode($input);
-// file_put_contents('a',print_r($data,true));
+
 $rows = array();
-$extensions = array();
 
 if ($data && !is_array($data))
     $data = array($data);
 
-foreach ($data as $row) {
-    $values = array();
-
-    foreach ($row as $key => $value)
-        if ($key == 'id')
-            $id = $key;
+$row = $data[0];  
+$extensions = $row->extension;  
+$values = array();
+$pbx_values = array();
+foreach ($row as $key => $value)
+   if (in_array($key, array('forward', 'forward_busy', 'forward_noanswer', 'noanswer_timeout'))) {
+        if (!empty($value))
+             $pbx_values[$key] = "'$value'";
+   } elseif (in_array($key, array('id','status', 'priority'))) {
+     if ($key == 'priority')
+          $priority = $value;
+     } else {
+        if ($key == 'group_name')
+            $group_name = $value;
         else
-        if (in_array($key, array('status', 'priority', 'forward', 'forward_busy', 'forward_noanswer', 'noanswer_timeout')))
-            ;
-        // else
-        // if ($key == "extension" && !$value) $values[$key]=" (SELECT MAX(extension)+1 FROM (SELECT * FROM extensions)as x) ";
-        else
-        if ($key == 'group_name') {
-            if ($value && $row->extension)
-                ; $extensions[$row->extension] = $value;
-        }
-        else
-            $values[$key] = "'$value'";
-
-    $rows[] = $values;
-}
+           $values[$key] = "'$value'";
+     }
+$rows[] = $values;
 
 $need_out = false;
 include("create.php");
 
+
+
+
 $rows = array();
-$groups = array();
 
-$result = compact_array(query_to_array('SELECT extension,extension_id FROM extensions'));
-if (!is_array($result["data"]))
-    echo out(array("success" => false, "message" => $result));
-if ($result['data'] && $extensions)
-    foreach ($result['data'] as $row)
-        foreach ($extensions as $key => $value)
-            if ($row[0] == $key)
-                $groups[$row[1]] = $value;
+// Нужна ли проверка на пустоту параметров - см. как работает маршрутизация по полям PBX
 
-$result = compact_array(query_to_array('SELECT groups.group,group_id FROM groups'));
-if (!is_array($result['data']))
-    echo out(array('success' => false, 'message' => $result));
-if ($result['data'] && $groups)
-    foreach ($result['data'] as $row)
-        foreach ($groups as $key => $value)
-            if ($value == $row[0])
-                $rows[] = array('extension_id' => $key, 'group_id' => $row[1]);
+$result = query_to_array("SELECT extension_id FROM extensions WHERE extension = $extensions");
+$extension_id = $result[0]['extension_id'];
 
+if (!empty($pbx_values))
+    foreach ($pbx_values as $pbx_key => $pbx_value) {
+        $sql = "INSERT INTO pbx_settings (extension_id, param, value) VALUES ($extension_id, '$pbx_key', $pbx_value)";
+        query($sql);
+        $sql = "INSERT INTO actionlogs (date, performer, query, ip) VALUES (" . time() . ", \"{$_SESSION['user']}\", \"$sql\", \"{$_SERVER['REMOTE_ADDR']}\")";
+        query($sql);       
+    }
 
-// file_put_contents('b',print_r($rows,true));
+if (!empty($group_name)) {
+    $result = query_to_array("SELECT group_id FROM groups WHERE groups.group = '$group_name'");
+    $group_id = $result[0]['group_id'];
+    if (!empty($priority)) {
+        $sql = "INSERT INTO group_priority (group_id, extension_id, priority) VALUES ($group_id, $extension_id, $priority)";
+        query($sql);
+    }
+    $rows[] = array('extension_id' => $extension_id, 'group_id' => $group_id);
+    
+}
+
 $action = 'create_group_members';
 include("create.php");
 ?>
