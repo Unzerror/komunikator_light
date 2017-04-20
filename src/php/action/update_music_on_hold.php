@@ -57,7 +57,8 @@
 need_user();
 
 $table_name = 'music_on_hold';
-$data = json_decode($HTTP_RAW_POST_DATA);
+$input = file_get_contents("php://input"); 
+$data = json_decode($input);
 $rows = array();
 $values = array();
 

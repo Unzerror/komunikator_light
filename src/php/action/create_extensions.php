@@ -56,7 +56,7 @@
 
 need_user();
 
-$input = file_get_contents("php://input");  
+$input = file_get_contents("php://input"); 
 $data = json_decode($input);
 // file_put_contents('a',print_r($data,true));
 $rows = array();

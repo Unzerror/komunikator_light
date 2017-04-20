@@ -104,7 +104,7 @@ function UUID_generator() {
 
 need_user();
 
-$input = file_get_contents("php://input");  
+$input = file_get_contents("php://input"); 
 $data = json_decode($input);
 if ($data && !is_array($data))
     $data = array($data);

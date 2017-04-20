@@ -55,7 +55,7 @@
 
 need_user();
 
-$input = file_get_contents("php://input");  
+$input = file_get_contents("php://input"); 
 $data = json_decode($input);
 $rows = array();
 $exten = $_SESSION['caller'];

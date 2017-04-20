@@ -69,7 +69,8 @@ function extension_number_from_SIP_addresses($s) {
 /* - - - - -  функция – получение внутреннего номера от SIP-адреса (КОНЕЦ)  - - - - - */
 
 need_user();
-$data = json_decode($HTTP_RAW_POST_DATA);
+$input = file_get_contents("php://input"); 
+$data = json_decode($input);
 if ($data && !is_array($data)) {
     $data = array($data);
 }

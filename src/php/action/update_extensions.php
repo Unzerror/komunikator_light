@@ -58,7 +58,8 @@ need_user();
 
 $table_name = 'extensions';
 $values = array();
-$data = json_decode($HTTP_RAW_POST_DATA);
+$input = file_get_contents("php://input"); 
+$data = json_decode($input);
 $rows = array();
 $pbx_values = array();
 $prior_values = array();
