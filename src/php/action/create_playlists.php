@@ -64,14 +64,23 @@ $values = array();
 
 if ($data && !is_array($data))
     $data = array($data);
-foreach ($data as $row) {
-    $values = array();
-    foreach ($row as $key => $value)
-        if ($key == 'id')
-            $id = $key;
-        else
-            $values[$key] = (int)$value;
-    $rows[] = $values;
+$playlist = $data[0]->playlist;
+$in_use = $data[0]->in_use;
+$sql = "SELECT playlist_id FROM playlists WHERE playlist = \"{$playlist}\" ";
+$res = query_to_array($sql);
+
+if (empty($res[0]['playlist_id'])) {
+    foreach ($data as $row) {
+        $values = array();
+        foreach ($row as $key => $value)
+           if ($key == 'id')
+                $id = $key;
+           else
+                $values[$key] = (int)$value;
+        $rows[] = $values;
+    }
+if ($in_use)
+    query("update playlists set in_use = 0 where playlist <> \"{$playlist}\"");
 }
 
 require_once("create.php");
