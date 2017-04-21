@@ -70,7 +70,7 @@ foreach ($data as $row) {
         if ($key == 'id')
             $id = $key;
         else
-            $values[$key] = "'$value'";
+            $values[$key] = (int)$value;
     $rows[] = $values;
 }
 

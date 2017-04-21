@@ -69,7 +69,7 @@ foreach ($data as $row) {
     foreach ($row as $key => $value) {
         if ($key == 'in_use' && $value)
             $id = $row->id;
-        $values[$key] = "'$value'";
+        $values[$key] = (int)$value;
         $rows[] = $values;
     }
 }
