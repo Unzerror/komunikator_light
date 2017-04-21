@@ -146,14 +146,14 @@ function get_sql_limit($start, $size/* ,$page */) {
         return '';
     //  if ($start==null || $size==null) return '';
     global $db_type_sql;
-    if ($db_type_sql == 'mysql')
+    if ($db_type_sql == 'mysqli')
         return " LIMIT $start,$size";
     return " LIMIT $size OFFSET $start";
 }
 
 function get_sql_field($name) {
     global $db_type_sql;
-    if ($db_type_sql == 'mysql')
+    if ($db_type_sql == 'mysqli')
         return "`$name`";
     if ($db_type_sql == 'sqlite3')
         return "`$name`";
@@ -168,7 +168,7 @@ function get_SQL_concat($data) {
         return '';
     if (count($data) == 1)
         return $data[0];
-    if ($db_type_sql == 'mysql') {
+    if ($db_type_sql == 'mysqli') {
         $str = 'CONCAT(';
         $sep = '';
         foreach ($data as $el) {

@@ -75,7 +75,7 @@ foreach ($rows as $row) {
         $sql = sprintf("UPDATE %s SET %s WHERE %s=%s", $table_name, implode(', ', $updates), $id_name, $id);
         query($sql);
 
-        if ($db_type_sql == "mysql") {
+        if ($db_type_sql == "mysqli") {
             $sql = "INSERT INTO actionlogs (date, performer, query, ip) VALUES (" . time() . ",\"{$_SESSION['user']}\",\"$sql\", \"{$_SERVER['REMOTE_ADDR']}\")";
             query($sql);
         }
