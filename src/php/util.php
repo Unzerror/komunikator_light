@@ -154,7 +154,7 @@ function get_sql_limit($start, $size/* ,$page */) {
 function get_sql_field($name) {
     global $db_type_sql;
     if ($db_type_sql == 'mysqli')
-        return "`$name`";
+        //return "`$name`";
     if ($db_type_sql == 'sqlite3')
         return "`$name`";
     return $name;

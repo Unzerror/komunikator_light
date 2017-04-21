@@ -75,6 +75,8 @@ if (empty($res[0]['playlist_id'])) {
         foreach ($row as $key => $value)
            if ($key == 'id')
                 $id = $key;
+           elseif ($key == 'playlist')
+                $values[$key] = "'$value'";
            else
                 $values[$key] = (int)$value;
         $rows[] = $values;
