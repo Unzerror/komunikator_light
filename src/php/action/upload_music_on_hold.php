@@ -120,7 +120,7 @@ function _response($success = true, $message = 'OK') {
 
     global $fileName;
     if ($success) {
-        $rows[] = array('music_on_hold' => "'$fileName'", 'description' => "''", 'file' => "'$fileName'");
+        $rows[] = array("music_on_hold" => "'$fileName'", "description" => "''", "file" => "'$fileName'");
 
         $action = 'create_music_on_hold';
         require_once("create.php");
