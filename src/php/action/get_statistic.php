@@ -409,7 +409,7 @@ function get_state_webrtc2sip() {
 
     return $sda_tick;
 }
-
+/*
 $f_data[] = array('Модуль: Звонок<br>с сайта', get_state_webrtc2sip());
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -479,7 +479,7 @@ function get_state_callrecord() {
 }
 
 $f_data[] = array('Модуль: Запись<br>Звонков', get_state_callrecord());
-
+*/
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 

@@ -235,10 +235,10 @@ Ext.define('app.Viewport', {
                         }),
                         Ext.create('app.module.Network_Settings_Panel', {
                             title: app.msg.network_settings  // Сетевые настройки
-                        }),
+                        }),/*
                         Ext.create('app.module.Tuning_Modules_Grid', {
                             title: app.msg.modules  // Модули
-                        }),
+                        }),*/
                         Ext.create('app.module.Extra_Grid', {
                             title: app.msg.additional_settings  // Дополнительные настройки
                         }), /*
@@ -283,7 +283,7 @@ Ext.define('app.Viewport', {
                                 });
 
                             }
-                        },
+                        },/*
                         {
                             title: app.msg.update, // Обновление
 
@@ -352,23 +352,23 @@ Ext.define('app.Viewport', {
                                     animEl: 'mb4',
                                     icon: Ext.MessageBox.QUESTION
                                 });
-                            }}
+                            }}*/
                     ]
                 }),
-                /*
+                
                  Ext.create('app.Card_Panel', {
                  // id:'modules',
                  title: app.msg.modules, // Модули
                  items: [
-                 Ext.create('app.module.Call_website_Grid', {
-                 title: app.msg.Call_website  // Звонок с сайта
+                 Ext.create('app.module.Call_Record_Grid', {
+                 title: app.msg.Call_Record_Grid  // запись разговора
                  }),
                  Ext.create('app.module.Mail_Settings_Panel', {
                  title: app.msg.mail_settings  // Почтовые уведомления
                  })
                  ]
                  })
-                 */
+                 
                 /*
                  { 
                  title: app.msg.attendant,

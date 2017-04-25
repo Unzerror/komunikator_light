@@ -58,7 +58,7 @@ need_user();
 $input = file_get_contents("php://input"); 
 $data = json_decode($input);
 $rows = array();
-$exten = $_SESSION['caller'];
+//$exten = $_SESSION['caller'];
 $caller_group_id = "''";
 $called_group_id = "''";
 if ($data && !is_array($data))
@@ -81,8 +81,6 @@ foreach ($data as $row) {
                 $sql = "SELECT group_id FROM groups WHERE groups.group = '$called_group'";
                 $result1 = query_to_array($sql);
                 $called_group_id = $result1[0]['group_id'];
-            } else {
-                
             }
             if ($key == 'gateway' && $value != '' && $value != '*') {
                 $gateway = $value;
@@ -90,9 +88,11 @@ foreach ($data as $row) {
                 $result1 = query_to_array($sql);
                 $gateway_id = $result1[0]['gateway_id'];
                 $values['gateway'] = "'$gateway_id'";
-            } else {
-                $values[$key] = "'$value'";
             }
+            if ($key == 'enabled')
+                  $values[$key] = (int)$value;
+            else 
+                $values[$key] = "'$value'";
         };
     }
     $rows[] = $values;
