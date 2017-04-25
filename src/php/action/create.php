@@ -57,7 +57,7 @@ $tbl = explode('_', $action, 2);
 $table_name = get_sql_field(next($tbl));
 
 foreach ($rows as $row) {
-    $sql = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table_name, implode(', ', array_map('new_keys_SQL', array_keys($row))), implode(', ', $row));
+    $sql = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table_name, implode(', ', array_map('get_sql_field', array_keys($row))), implode(', ', $row));
     query($sql);
 
     if ($db_type_sql == "mysqli") {
