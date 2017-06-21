@@ -38,14 +38,6 @@
  *  version (version 3 as well).
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
-
-require_once (__DIR__.'/vendor/autoload.php');
-use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
-$log = new Logger('register');
-$log->pushHandler(new StreamHandler('/var/tmp/register.log', Logger::DEBUG));
-$log->addInfo('==register.php logger start==');
-
 require_once("libyate.php");
 require_once("lib_queries.php");
 
