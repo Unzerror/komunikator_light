@@ -53,12 +53,7 @@
 *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 */
 
-?><?php
-
-$cur_ver = '1.2';
-$updates_base = "http://komunikator.ru/repos";
-$updates_url = "$updates_base/checkforupdates.php?cur_ver=$cur_ver";
-$updates_data_url = "$updates_base/update.tar.gz";
+$cur_ver = '1.5.a0';
 
 error_reporting(E_ALL & ~(E_STRICT | E_NOTICE | E_WARNING));
 
@@ -66,91 +61,34 @@ date_default_timezone_set("UTC");
 $def_time_offset = 4;//Смещение метки времени по умолчанию (в часах) при отправке писем   
 
 require_once("DB.php");
+require_once("PEAR.php");
 
 function handle_pear_error($e) {
     Yate::Output($e->getMessage() . ' ' . print_r($e->getUserInfo(), true));
 }
 
-require_once 'PEAR.php';
-//PEAR::setErrorHandling(PEAR_ERROR_CALLBACK, 'handle_pear_error');
-
-
-// - - - - -  новый вариант (НАЧАЛО)  - - - - -
-
-if ( in_array( $action, array('get_call_button', 'create_call_button', 'destroy_call_button', 'update_call_button', 'get_button_code') ) ) {
-    $db_type_sql = "sqlite3";
-    
-    $db_sqlite3_path = "/etc/webrtc2sip/c2c_sqlite.db";  // абсолютный путь к файлу БД
-    
-    
-    // - - - - - - - - - - - - - - - - - - - -
-    
-    // для работы на локальном компьютере под Windows, посредствам Denwer
-
-    // Denwer необходима библиотека sqlite3.php (должна находится c:\WebServers\usr\local\php5\pear\DB\)
-    // библиотеку можно скопировать с «тестовой» машины (находится /usr/share/php/DB)
-    
-    // $db_sqlite3_path = "Z:\DB_SQLite\c2c_sqlite.db";
-    
-    // - - - - - - - - - - - - - - - - - - - -    
-
-    
-    $dsn = $db_type_sql.":///".$db_sqlite3_path;
-}
-else {
-    $db_type_sql = "mysql";
-    
-    $db_host = "localhost";
-    $db_user = "kommunikator";
-    $db_passwd = "kommunikator";
-    $db_database = "kommunikator";
-    
-    $dsn = "$db_type_sql://$db_user:$db_passwd@$db_host/$db_database";
-}
-
-// - - - - -  новый вариант (КОНЕЦ)  - - - - -
-
-
-// - - - - -  старый вариант (НАЧАЛО)  - - - - -
-/*
-$db_type_sql = "mysql";
-
+$db_type_sql = "mysqli";
 $db_host = "localhost";
 $db_user = "kommunikator";
 $db_passwd = "kommunikator";
 $db_database = "kommunikator";
-
 $dsn = "$db_type_sql://$db_user:$db_passwd@$db_host/$db_database";
-*/
-// - - - - -  старый вариант (КОНЕЦ)  - - - - -
 
-
-$conn = DB::connect($dsn);
-$debug_info = true;
-
-if (PEAR::isError($conn)) {
-    if ($debug_info)
-        echo 'DBMS/Debug Message: ' . $conn->getDebugInfo() . "<br>";
-    else
-        echo 'Standard Message: ' . $conn->getMessage() . "<br>";
-    exit;
+$conn = new DB();
+$conn = $conn->Connect($dsn); 
+if ($conn->isError($conn)) {
+     die($conn->message.'<br>'.$conn->userinfo);
 }
 
 $conn->setFetchMode(DB_FETCHMODE_ASSOC);
 
+$query_on = false;
+$debug_on = false;
 
 $vm_base = "/var/lib/misc";
-$no_groups = false;
-$no_pbx = false;
 $uploaded_prompts = "/var/lib/misc";
-$query_on = false;
-$max_resets_conn = 5;
 
-//$calls_email  = "root@localhost"; 
-//$fax_call = "root@localhost";
-//$calls_email = "info@digt.ru";
-//$fax_call = "info@digt.ru";
-
+/*
 $source = array(
     'voicemail' => 'external/nodata/voicemail.php',
     'attendant' => 'external/nodata/auto_attendant.php'
@@ -159,6 +97,7 @@ $source = array(
 $key_source = array();
 foreach ($source as $key => $value)
     $key_source[$value] = $key;
+*/
 
 $time_out = 600;
 ?>
