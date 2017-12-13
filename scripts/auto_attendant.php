@@ -73,7 +73,8 @@ function getPBXstatus() {
     return $status;
 }
 
-function writeRouteATT($to_call,$route_state) {
+//!!!Заменить на message
+/*function writeRouteATT($to_call,$route_state) {
     global $ourcallid;
     global $billid;
     global $caller;
@@ -84,7 +85,7 @@ function writeRouteATT($to_call,$route_state) {
     $query1 = "INSERT INTO call_route (time, chan, direction, billid, caller, called, duration, status) VALUES ('".($time_route)."','".$ourcallid."','route','".$billid."','".$caller."','".$to_call."', 0,'".$route_state."')";
     $res1 = query_nores($query1);
     $log->debug('att_route['.$time_route.']:'.$to_call.'/'.$route_state);
-}
+}*/
 
 /* Perform machine status transitions */
 
@@ -175,7 +176,7 @@ function setState($newstate) {
             for ($i = 0; $i < count($keys); $i++) {
                 if ($keys[$i]["key"] == $hold_keys) {
                     $to_call = $keys[$i]["destination"];
-                    writeRouteATT($to_call,'hold_keys_attendant');
+                    //writeRouteATT($to_call,'hold_keys_attendant');
                     //$hold_keys = null;
                     break;
                 }
@@ -190,11 +191,11 @@ function setState($newstate) {
                     return;
                 }
                 $to_call = $res[0]["called"];
-                writeRouteATT($to_call,'cs_attendant');
+                //writeRouteATT($to_call,'cs_attendant');
             }
             if (!$to_call)
                 $to_call = $hold_keys;
-                writeRouteATT($to_call,'number_attendant');
+                //writeRouteATT($to_call,'number_attendant');
             $m = new Yate("call.route");
             $m->params["caller"] = $caller;
             $m->params["called"] = $to_call;
