@@ -23,17 +23,20 @@
  */
 ?>
 <?php
+
 require_once("lib_queries.php");
 require_once("libyate.php");
 
 set_time_limit($time_out);
 
 $ourcallid = "auto_attendant/" . uniqid(rand(), 1);
-
+$type_debug = 'auto_attendant';
 $wait_time = 4; //number of seconds that script has to wait after user input in order to see if another digit will be pressed
+//$hold_keys = '#';          // Добавить в интерфейс отработку # для автоматического приема звонка в Автосееретаря
 $hold_keys = '0'; //set default value for a hold key
 $count = false; //start to count seconds since a digit has been pressed
 $state = "enter";
+$max_len_inside_number = 5;
 
 function format_array($arr) {
     $str = str_replace("\n", "", print_r($arr, true));
@@ -43,8 +46,44 @@ function format_array($arr) {
     return $str;
 }
 
-function debug($mess) {
-    Yate::Debug("auto_attendant.php: " . $mess);
+
+function getPBXstatus() {
+    $status = 'offline';
+    $day_week = date('w') ;
+    $hour = date('H') * 1;
+    
+    $query = "select start_hour, end_hour FROM time_frames";
+    $res = query_to_array($query);
+    if (count($res)) {
+        $res1[0] = $res[$day_week];
+        $next_day = ($day_week + 1) % 7;
+        $perv_day = ($day_week + 6) % 7;
+        if ($res[$next_day]["start_hour"] < 0) {
+            $res1[1]["start_hour"] = $res[$next_day]["start_hour"] + 24;
+            $res1[1]["end_hour"] = $res[$next_day]["end_hour"] + 24;
+        } elseif ($res[$perv_day]["end_hour"] > 24) {
+            $res1[1]["start_hour"] = $res[$perv_day]["start_hour"] - 24;                             
+            $res1[1]["end_hour"] = $res[$perv_day]["end_hour"] - 24;
+        }
+        foreach ($res1 as $row) {
+            if ($row["start_hour"] <= $hour && $hour < $row["end_hour"])
+                $status = 'online';
+        }
+    }
+    return $status;
+}
+
+function writeRouteATT($to_call,$route_state) {
+    global $ourcallid;
+    global $billid;
+    global $caller;
+    global $log;
+    
+    list($usec, $sec) = explode(" ", microtime());
+    $time_route = ((float)$usec + (float)$sec);    
+    $query1 = "INSERT INTO call_route (time, chan, direction, billid, caller, called, duration, status) VALUES ('".($time_route)."','".$ourcallid."','route','".$billid."','".$caller."','".$to_call."', 0,'".$route_state."')";
+    $res1 = query_nores($query1);
+    $log->debug('att_route['.$time_route.']:'.$to_call.'/'.$route_state);
 }
 
 /* Perform machine status transitions */
@@ -61,6 +100,7 @@ function setState($newstate) {
     global $destination;
     global $called;
     global $ev;
+    global $billid;
 
     // are we exiting?
     if ($state == "")
@@ -73,25 +113,10 @@ function setState($newstate) {
     switch ($newstate) {
         case "greeting":
             // check what prompt to use for this time of day
-            //$query = "select prompts.prompt_id, prompts.file as prompt from time_frames, prompts /*where numeric_day=extract(dow from now()) and cast(start_hour as integer)<=extract(HOUR FROM now()) AND cast(end_hour as integer)>extract(HOUR FROM now()) and time_frames.prompt_id=prompts.prompt_id*/ UNION select prompt_id,  file as prompt from prompts where status='online'";
-
-            $status = 'offline';
-            $query = "select prompt_id, day, start_hour, end_hour, numeric_day FROM time_frames";
-            $res = query_to_array($query);
-            if (count($res)) {
-                $day_week = date('w');
-                $hour = date('H') * 1;
-                debug("Current week index '$day_week' : hour '$hour'");
-                //$day_week = 2;
-                //$hour 	  = 12;
-                $status = 'offline';
-
-                foreach ($res as $row)
-                    if ($row["numeric_day"] == $day_week && $row["start_hour"] <= $hour && $hour < $row["end_hour"]) {
-                        $hold_keys = ''; // Reset default key                         
-                        $status = 'online';
-                    }
-            };
+            // check what prompt to use for this time of day
+            $status = getPBXstatus();
+            if ($status == 'online')
+                $hold_keys = ''; // Reset default key
 
             $query = "select prompts.prompt_id, prompts.file as prompt from prompts where status='$status'";
             $res = query_to_array($query);
@@ -132,7 +157,8 @@ function setState($newstate) {
             $m = new Yate("chan.attach");
             $m->params["consumer"] = "wave/record/-";
             $m->params["notify"] = $ourcallid;
-            $m->params["maxlen"] = $wait_time * 10000;
+            //вытаскивать инфу из звонка
+            $m->params["maxlen"] = $wait_time * 16000;
             $m->Dispatch();
             break;
         case "goodbye":
@@ -145,10 +171,11 @@ function setState($newstate) {
             break;
         case "call.route":
             $to_call = null;
-            debug('$keys = ' . $keys);
+            debug('$keys = ' . format_array($keys));
             for ($i = 0; $i < count($keys); $i++) {
                 if ($keys[$i]["key"] == $hold_keys) {
                     $to_call = $keys[$i]["destination"];
+                    writeRouteATT($to_call,'hold_keys_attendant');
                     //$hold_keys = null;
                     break;
                 }
@@ -163,13 +190,16 @@ function setState($newstate) {
                     return;
                 }
                 $to_call = $res[0]["called"];
+                writeRouteATT($to_call,'cs_attendant');
             }
             if (!$to_call)
                 $to_call = $hold_keys;
+                writeRouteATT($to_call,'number_attendant');
             $m = new Yate("call.route");
             $m->params["caller"] = $caller;
             $m->params["called"] = $to_call;
             $m->params["id"] = $ourcallid;
+            $m->params["billid"] = $billid;
             $m->params["already-auth"] = "yes";
             $m->params["call_type"] = "from outside";
             $m->Dispatch();
@@ -180,9 +210,30 @@ function setState($newstate) {
             $m->params["message"] = "call.execute";
             $m->params["id"] = $partycallid;
             $m->params["callto"] = $destination;
+            $m->params["fork.fake"] = "tone/ring";
+            //$m->params["direction"] = "outgoing";
+            $m->params["complete_minimal"] = true;
+            $m->Dispatch();
 
+            break;
+        case "fake_ring":
+            //$log->debug('fake call');
+            $m = new Yate("chan.attach");
+            $m->params["source"] = "moh/madplay";
+            $m->params["mohlist"] = '/var/lib/misc/moh/kpv.mp3';
             $m->Dispatch();
             break;
+        case "hangup":            
+            //$log->debug('chan_hangup');
+            $m = new Yate("chan.hangup");
+            //$m = new Yate("chan.disconected");
+            $m->params["id"] = $ourcallid;
+            $m->params["billid"] = $billid;
+            $m->params["answered"] = 'true';
+            //$m->params["reason"] = 'true';
+            $m->Dispatch();
+            //Yate::Uninstall("chan.dtmf");
+            //Yate::Uninstall("chan.notify");
     }
 }
 
@@ -217,6 +268,7 @@ function gotDTMF($text) {
 
 function gotNotify($reason) {
     global $state;
+    global $ourcallid;
 
     debug("gotNotify('$reason') state: $state");
     if ($reason == "replaced")
@@ -230,6 +282,8 @@ function gotNotify($reason) {
             setState("call.route");
             break;
         case "goodbye":
+            //$query = "UPDATE call_logs SET reason='time_out' WHERE chan='" .$ourcallid. "'";   //Нужно ли для register.php без MySQL?
+            //$res = query_nores($query);            
             setState("");
             break;
     }
@@ -237,13 +291,13 @@ function gotNotify($reason) {
 
 Yate::Init();
 
-Yate::Debug(true);
+chek_debug();
 
 /* Install filtered handlers for the wave end and dtmf notify messages */
 // chan.dtmf should have a greater priority than that of pbxassist(by default 15)
-Yate::Install("chan.dtmf", 10, "targetid", $ourcallid);
-Yate::Install("chan.notify", 100, "targetid", $ourcallid);
 Yate::Install("engine.timer", 100);
+Yate::Install("chan.notify", 100, "targetid", $ourcallid);
+Yate::Install("chan.connected", 100);
 
 /* The main loop. We pick events and handle them */
 while ($state != "") {
@@ -265,6 +319,7 @@ while ($state != "") {
                     $partycallid = $ev->GetValue("id");
                     $caller = $ev->GetValue("caller");
                     $called = $ev->GetValue("called");
+                    $billid = $ev->GetValue("billid");
 
                     if ($ev->GetValue("debug_on") == "yes") {
                         Yate::Output(true);
@@ -294,14 +349,14 @@ while ($state != "") {
                     /*  определение правого плеча путем присвоения ему идентификатора вызова (billid) левого плеча  */
                     /*  автосекретарь -> группа -> внутр. номер  */
 
-                    // $m->params["direction"] = $ev->GetValue("direction");
-                    // $m->params["direction"] = 'outgoing';
-
+                    //$m->params["direction"] = $ev->GetValue("direction");
+                    $m->params["direction"] = 'outgoing';
                     $m->params["billid"] = $ev->GetValue("billid");
-
-                    // $m->params["status"] = $ev->GetValue("status");
-                    $m->params["status"] = 'cs_attendant';
-
+                    $m->params["caller"] = $caller;
+                    //$m->params["status"] = $ev->GetValue("status");                    
+                    $m->params["status"] = 'answered';
+                    $m->params["called"] = 'cs_attendant';
+                    //$m->params["cdrcreate"] = 'false';
                     // $m->params["reason"] = $ev->GetValue("reason");
                     // - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -332,8 +387,21 @@ while ($state != "") {
                         $count = 1;
                     else
                         $count++;
-                    if ($count == $wait_time)
+                    if ($count == $wait_time) {
                         setState("call.route");
+                            
+                    } elseif ($count > $wait_time + 5 ){
+                        setState("");
+                    }                       
+                    break;
+    
+                case "chan.connected":
+                    if( $billid == $ev->GetValue("billid") ) {
+                        if ( $ev->GetValue("status") == "answered" || $ev->GetValue("status") == "ringing" )
+                            Yate::Install("chan.dtmf", 10, "targetid", $ev->GetValue("targetid"));
+                        else
+                            Yate::Install("chan.dtmf", 10, "targetid", $ourcallid);
+                    }
                     break;
             }
             /* This is extremely important.
@@ -344,11 +412,18 @@ while ($state != "") {
         case "answer":
             //Yate::Debug("PHP Answered: " . $ev->name . " id: " . $ev->id);
             if ($ev->name == "call.route") {
+                //debug("call.route");
                 $destination = $ev->retval;
-                if ($destination)
-                    setState("send_call");
-                else
-                    setState("goodbye");
+                if ($destination) {
+                    //setState("fake_ring");
+                    $cs_status = "send_call";
+                }   else {                    
+                    $cs_status = "goodbye";                    
+                }
+                //$query = "UPDATE call_logs SET reason='" .$cs_status. "' WHERE chan='" .$ourcallid. "'";                ////Нужно ли для register.php без MySQL?
+                //$res = query_nores($query);
+                setState($cs_status);                
+                setState("hangup");
             }
             break;
         case "installed":
