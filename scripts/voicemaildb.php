@@ -21,8 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
  */
-?>
-<?php
+
 /* Simple voicemail manipulation for the Yate PHP interface
    To use add in regexroute.conf
 
@@ -51,12 +50,9 @@ $collect_pass = "";
 $files = array();
 $current = 0;
 
-$vm_func_for_dir = "getCustomVoicemailDir";
+$type_debug = 'voicemaildb';
 
-function debug($mess)
-{
-    Yate::Debug("voicemaildb.php: ".$mess);
-}
+$vm_func_for_dir = "getCustomVoicemailDir";
 
 /* Ask the user to enter number */
 function promptUser()
@@ -129,7 +125,7 @@ function setState($newstate)
 	    else
 		$m->params["source"] = "wave/play/$vm_base/deleted.au";
 	    $m->params["consumer"] = "wave/record/-";
-	    $m->params["maxlen"] = 100000;
+	    $m->params["maxlen"] = 300000;
 	    $m->params["notify"] = $ourcallid;
 	    $m->Dispatch();
 	    return;
@@ -198,7 +194,8 @@ function initUser()
 	$all_files = $files; // this array contains both .mp3 and .slin files
 	$files = array();
 	for($i=0; $i<count($all_files); $i++)
-	if(substr($all_files[$i],-5) == ".slin")
+	//if(substr($all_files[$i],-5) == ".slin")
+	if(substr($all_files[$i],-3) == ".au")
 	    $files[] = $all_files[$i];
     $dir = vmGetVoicemailDir($mailbox);
     debug("found " . count($files) . " file entries for mailbox $mailbox");
@@ -363,6 +360,8 @@ function gotDTMF($text)
 
     navigate($text);
 }
+
+chek_debug();
 
 /* Install filtered handlers for the wave end and dtmf notify messages */
 Yate::Install("chan.dtmf",10,"targetid",$ourcallid);
