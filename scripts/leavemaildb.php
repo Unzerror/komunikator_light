@@ -21,8 +21,6 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
  */
-?>
-<?php
 
 require_once("libyate.php");
 require_once("libvoicemail.php");
@@ -43,12 +41,12 @@ $mailbox = "";
 $user = "";
 $file = "";
 
-$vm_func_for_dir = "getCustomVoicemailDir";
+$caller = "";
+$called = "";
 
-function debug($mess)
-{
-    Yate::Debug("leavemaildb.php: ".$mess);
-}
+$type_debug = 'leavemaildb';
+
+$vm_func_for_dir = "getCustomVoicemailDir";
 
 /* Check if the user exists and prepare a filename if so */
 function checkUser($called,$caller)
@@ -81,7 +79,9 @@ function setState($newstate)
     global $vm_base;
     global $mailbox;
     global $user;
-    global $file;
+	global $file;
+	global $caller;
+	global $called;
 
     // are we exiting?
     if ($state == "")
@@ -124,7 +124,16 @@ function setState($newstate)
 	    $m = new Yate("user.update");
 	    $m->id = "";
 	    $m->params["user"] = $mailbox;
-	    $m->Dispatch();
+		$m->Dispatch();
+		
+		$m = new Yate("rec.vm");		
+		$m->params["peerid"] = $ourcallid;
+		$m->params["caller"] = $caller;
+		$m->params["called_gateway"] = $called;
+		$m->params["record"] = $file;
+		//$m->params["status"] = "recorded";
+		$m->params["keys"] = "peerid;caller;called_gateway;record";//status";
+		$m->Dispatch();
 	    break;
 	case "goodbye":
 	    $m = new Yate("chan.attach");
@@ -163,6 +172,8 @@ function gotNotify($reason)
     }
 }
 
+chek_debug();
+
 /* Install filtered handler for the wave end notify messages */
 Yate::Install("chan.notify",100,"targetid",$ourcallid);
 
@@ -198,43 +209,20 @@ while ($state != "") {
 		    $ev->Acknowledge();
 		    /* Check if the mailbox exists, answer only if that's the case */
 		    if (checkUser($ev->GetValue("called"),$ev->GetValue("caller"))) {
-			$m = new Yate("call.answered");
+				$caller = $ev->GetValue("caller");
+				$called = $ev->GetValue("called");
+				$m = new Yate("call.answered");
                         
-			$m->params["id"] = $ourcallid;
-			$m->params["targetid"] = $partycallid;
+				$m->params["id"] = $ourcallid;
+				$m->params["targetid"] = $partycallid;
+				$m->params["direction"] = 'outgoing';
+				$m->params["billid"] = $ev->GetValue("billid");
+				$m->params["status"] = 'answered';
+				$m->params["called"] = 'cs_voicemail';
+				$m->params["caller"] = $ev->GetValue("caller");
+				$m->Dispatch();
                         
-                        // - - - - - - - - - - - - - - - - - - - - - - - - -
-                        /*  (СЌС‚РѕРіРѕ Р±Р»РѕРєР° СЂР°РЅРµРµ РЅРµ Р±С‹Р»Рѕ)  */
-                        
-                        /*  РѕРїСЂРµРґРµР»РµРЅРёРµ РїСЂР°РІРѕРіРѕ РїР»РµС‡Р° РїСѓС‚РµРј РїСЂРёСЃРІРѕРµРЅРёСЏ РµРјСѓ РёРґРµРЅС‚РёС„РёРєР°С‚РѕСЂР° РІС‹Р·РѕРІР° (billid) Р»РµРІРѕРіРѕ РїР»РµС‡Р°  */
-                        /*  Р°РІС‚РѕСЃРµРєСЂРµС‚Р°СЂСЊ -> РІРЅСѓС‚СЂ. РЅРѕРјРµСЂ -> РіРѕР»РѕСЃРѕРІР°СЏ РїРѕС‡С‚Р°  */
-                        
-                        // $m->params["direction"] = $ev->GetValue("direction");
-                        $m->params["direction"] = 'outgoing';
-                        
-                        $m->params["billid"] = $ev->GetValue("billid");
-                        
-                        // $m->params["status"] = $ev->GetValue("status");
-                        $m->params["status"] = 'cs_voicemail';
-                        
-                        // $m->params["reason"] = $ev->GetValue("reason");
-                        // - - - - - - - - - - - - - - - - - - - - - - - - -
-                        
-                        // - - - - - - - - - - - - - - - - - - - - - - - - -
-                        /*  Р±Р»РѕРє РґР»СЏ С‚РµСЃС‚РёСЂРѕРІР°РЅРёСЏ Рё С‚РѕР»СЊРєРѕ  */
-                        
-                        /*
-                        $sda_string_a = print_r($m, true);  // $m = new Yate("call.answered");
-                        $sda_string_b = date(DATE_RFC822) . "\n" . 'case "call.execute":' . "\n" . $sda_string_a . "\n" . "\n";
-                            
-                        $sda_file = '/var/www/technical_help/green.txt';
-                        file_put_contents($sda_file, $sda_string_b, FILE_APPEND | LOCK_EX);
-                        */
-                        // - - - - - - - - - - - - - - - - - - - - - - - - -
-                        
-			$m->Dispatch();
-                        
-			setState("greeting");
+				setState("greeting");
 		    }
 		    else {
 			/* Play a message and exit - don't answer the call */
@@ -274,24 +262,6 @@ while ($state != "") {
 	    // Yate::Output("PHP Event: " . $ev->type);
     }
 }
-
-
-if (is_file("$user/$file")) {
-	Yate::Debug("Converting received message from .slin to .mp3.");
-
-	$filename = "$user/$file";
-
-	$mp3path = str_replace(".slin", ".mp3", $filename);
-
-	if (is_file("share/scripts/mp3ize.sh")) {
-		passthru("share/scripts/mp3ize.sh $mp3path $filename");
-	}
-        else {
-		// passthru("/usr/local/share/yate/scripts/mp3ize.sh $mp3path $filename");
-                passthru("/usr/share/yate/scripts/mp3ize.sh $mp3path $filename");
-	}
-}
-
 
 Yate::Output("PHP leavemaildb : bye!");
 /* vi: set ts=8 sw=4 sts=4 noet: */
