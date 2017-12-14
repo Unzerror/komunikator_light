@@ -8,7 +8,7 @@
 
 *    ЭТОТ ФАЙЛ является частью проекта «Komunikator»
 
-*    Сайт проекта «Komunikator»: http://4yate.ru/
+*    Сайт проекта «Komunikator»: http://komunikator.ru/
 *    Служба технической поддержки проекта «Komunikator»: E-mail: support@4yate.ru
 
 *    В проекте «Komunikator» используются:
@@ -29,11 +29,11 @@
 *  | ENG | - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
 *    "Komunikator" is a web interface for IP-PBX "YATE" configuration and management
-*    Copyright (C) 2012-2013, "Telephonnyie sistemy" Ltd.
+*    Copyright (C) 2012-2017, "Telephonnyie sistemy" Ltd.
 
 *    THIS FILE is an integral part of the project "Komunikator"
 
-*    "Komunikator" project site: http://4yate.ru/
+*    "Komunikator" project site: http://komunikator.ru/
 *    "Komunikator" technical support e-mail: support@4yate.ru
 
 *    The project "Komunikator" are used:
