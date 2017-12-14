@@ -24,13 +24,6 @@
 require_once("libyate.php");
 require_once("lib_queries.php");
 
-require_once (__DIR__.'/vendor/autoload.php');
-use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
-$log = new Logger('record');
-$log->pushHandler(new StreamHandler('/var/tmp/register.log', Logger::DEBUG));
-$log->addInfo('==record.php logger start==');
-
 $type_debug = 'record';
 
 $legs_path = 'wave/record//var/lib/misc/records/leg/';
@@ -48,7 +41,6 @@ function in_record($data,$type) {
 }
 
 function geet_active_peer_paar($ev) {
-    global $log;
 
     $peer = array();
     $dynamic_parametrs = $ev->GetValue("dynamic_parametrs");
@@ -62,7 +54,6 @@ function geet_active_peer_paar($ev) {
                     $data = explode("|",$ev->GetValue($event.".".$indx));
                     foreach ($parametrs as $i=>$parametr) {
                         $peer[$event][$indx][$parametr] = $data[$i];
-                        //$log->debug($event."[".$indx."][".$parametr."] = ".$data[$i]);
                     }
                     $indx++;
                 }
@@ -74,14 +65,12 @@ function geet_active_peer_paar($ev) {
                     $data = explode("|",$ev->GetValue($event.".".$indx));
                     foreach ($parametrs as $i=>$parametr) {
                         $peer[$event][$indx][$parametr] = $data[$i];
-                        //$log->debug($event."[".$indx."][".$parametr."] = ".$data[$i]);
                     }
                     $peer_indx = 0;
                     while (!is_null($ev->GetValue("$event.$indx.$peer_indx"))) {
                         $peer_data = explode("|",$ev->GetValue("$event.$indx.$peer_indx"));
                         foreach ($peer_parametrs as $j=>$peer_parametr)  {
                             $peer[$event][$indx][$peer_indx][$peer_parametr] = $peer_data[$j];
-                            //$log->debug($event."[".$indx."][".$peer_indx."][".$peer_parametr."] = ".$peer_data[$j]);
                         }
                         $peer_indx++;
                     }
@@ -95,7 +84,6 @@ function geet_active_peer_paar($ev) {
 
 function filter_peer($active_paar) {
     global $record_chanels;
-    global $log;
     
     $time = microtime(true);
     $peer_paar = array();
@@ -136,24 +124,19 @@ function filter_peer($active_paar) {
     }
 
     if (isset($active_paar["conf"])) {  
-        //$log->debug(implode(",", array_keys($record_chanels)));
         $max_confs = max(array_keys($active_paar["conf"]));
         for ($indx = 0; $indx<=$max_confs; $indx++) {
             $part = 0;
             $rec_id = $active_paar["conf"][$indx]["record"];
             $called = $active_paar["conf"][$indx]["called"];
             foreach ($record_chanels as $id=>$channels)  {                
-                //$log->debug("1.Type[".$id."]:".$channels[0]["called"]);
-                //$log->debug(implode(",", array_keys($channels[0])));
                 if (($channels[0]["connect_type"] == "conf") and ($channels[0]["called"]) == $called)  {
                     $part1 = max(array_keys($channels));
-                    //$log->debug("Search:".$part);
                     if (is_null($record_chanels[$id][$part1]["duration"]))  {
                         $record_chanels[$id][$part1]["duration"] = round($time - $channels[$part1]["start"], 1);                        
                         $new_data[] = [$id, $part1];
                         if ($id == $rec_id)
                             $part = $part1 + 1;
-                        //$log->debug("Update[".($part)."]:".$id);
                     }
                 }                
             }
@@ -166,7 +149,6 @@ function filter_peer($active_paar) {
                         $peer_paar[$new_indx]["connect_type"] = "conf";
                         $peer_paar[$new_indx]["id"] = $active_paar["conf"][$indx][$peer_indx]["chan"];
                         $peer_paar[$new_indx]["record"] = $rec_id."_p".$part."_".$peer_indx;
-                        //$log->debug("Insert ".$new_indx."[".$peer_paar[$new_indx]["id"]."]:".$peer_paar[$new_indx]["record"]);
                         $new_indx++;
                         
                         $record_chanels[$rec_id][$part]["chan"][$peer_indx] = $active_paar["conf"][$indx][$peer_indx]["chan"];                        
@@ -197,7 +179,6 @@ function filter_peer($active_paar) {
     if (!empty($sql)) {
         $safe_arr = implode(',', $sql);
         $query = "INSERT INTO `call_rec` (`".implode("`, `", $sql_key)."`) VALUES $safe_arr ON DUPLICATE KEY UPDATE `duration` = VALUES(`duration`)";
-        //$log->debug($query);
         $res = query_nores($query);
     }
 
@@ -207,13 +188,11 @@ function filter_peer($active_paar) {
 function recorder($ev) {
     //global $record_chanels;
     global $legs_path;
-    global $log;
     
     $active_paar = geet_active_peer_paar($ev);
     $peer_paar = filter_peer($active_paar);
 
     foreach($peer_paar as $peer) {
-        //$log->debug("msg:".$peer["id"]);
         $m = new Yate("chan.masquerade");
         $m->params["message"] = 'chan.record';
         $m->params["id"] = $peer["id"];
@@ -229,7 +208,6 @@ function recorder($ev) {
 
 function recorder1($ev) {
     global $record_chanels;
-    global $log;
     
     $active_paar = geet_active_peer_paar($ev);
     $peer_paar = filter_peer($active_paar);
@@ -241,9 +219,7 @@ function recorder1($ev) {
         if($peer_paar["call"][$indx]["ended"]) {
             //метка времени завершения для sox
             //$query = "UPDATE `call_rec` SET `duration`=($time-`start`) WHERE `record`='".$peer_paar["call"][$indx]["record"]."'";     //Добавить  PART для HOLD            
-            //$log->debug("stop");
         } else {
-            //$log->debug("start");
             $m = new Yate("chan.masquerade");
             $m->params["message"] = 'chan.record';
             $m->params["id"] = $peer_paar["call"][$indx]["peerid"];            
@@ -259,13 +235,9 @@ function recorder1($ev) {
     $indx = 0;
     while (isset($peer_paar["conf"][$indx])) {
         $conf = $peer_paar["conf"][$indx];
-        //$log->debug("Conf:".$conf);
-        //$log->debug("MSG [`".implode("`,`", array_keys($conf))."`] VALUES ('".implode("','", $conf)."')");
         
         if($peer_paar["conf"][$indx]["ended"]) {
-            //$log->debug("stop conf");
         } else {
-            //$log->debug("start conf");
             if (isset($peer_paar["conf"][$indx][1])) {
                 $time = microtime(true);
                 $peer_indx = 0;
@@ -278,7 +250,6 @@ function recorder1($ev) {
                     $peer_indx++;
                 }
                 //$query = "INSERT INTO `call_rec` (`start`,`record`,`connect_type`,`peer_count`,`called`) VALUES ($time,'".$peer_paar["conf"][$indx]["record"]."','conf',$peer_indx,'".$peer_paar["conf"][$indx]["called"]."')";   //Добавить  PART для HOLD
-                //$log->debug($query);
                 //$res = query_nores($query);
             }
         }
@@ -288,7 +259,6 @@ function recorder1($ev) {
 
 function batch_file($ev) {
     global $record_chanels;
-    global $log;
     global $stdout;
 
     Yate::Output("PHP batch file start:".microtime(true));    
@@ -317,7 +287,6 @@ function merge_file($records = array()) {
     global $record_chanels;
     global $next_time;
     global $time_step;
-    global $log;
 
     static $queue = array();
     static $process;
@@ -326,13 +295,11 @@ function merge_file($records = array()) {
         foreach ($records as $recid)
             if (!in_array($recid,$queue))
                 $queue[]=$recid;
-        //$log->debug("input:".implode(",", $records)."|".implode(",", $queue));
         //$queue = array_merge($queue, $records);        
     }
 
     if (is_resource($process)) {
         $meta_info = proc_get_status($process);
-        $log->debug(microtime(true)." batch:".implode(",", $meta_info)."|".$meta_info["running"]);
         if(!$meta_info["running"]) {
             $rec_id = array_shift($queue);                                                                                  //удалять из mysql
             $exit_code = proc_close($process);
@@ -341,14 +308,12 @@ function merge_file($records = array()) {
             else
                 $query = "UPDATE `call_rec` SET `close`='".$meta_info["exitcode"]."' WHERE `record`='".$rec_id."'";
             $res = query_nores($query);
-            //$log->debug(microtime(true)." close[".$rec_id."]".$exit_code);
             if(empty($queue))
                 $time_step = 3600;
         }
     }
 
     if (!is_resource($process) && !empty($queue))  {
-        $log->debug("Start");
         $descriptor = array(
             0 => array('pipe', 'r'),
             1 => array('pipe', 'w'),
@@ -367,21 +332,17 @@ function merge_file($records = array()) {
             }
         }
         $cmd_parts = "/usr/share/yate/scripts/script.sh ".$rec_id." ".$parts_count.$cmd_parts;
-        $log->debug(microtime(true)." Start batch:".$cmd_parts);
 
         $process = proc_open($cmd_parts, $descriptor, $pipes);
         $next_time = 0;
         $time_step = 2;        
         $meta_info = proc_get_status($process);
-        $log->debug(microtime(true)." batch:".implode(",", $meta_info)."|".$meta_info["running"]);
     } 
 
 }
 
 function merge_file1($records = array()) {
     global $record_chanels;
-    global $log;
-    global $log;
     
     static $queue = array();
     //static $stdout;
@@ -398,20 +359,15 @@ function merge_file1($records = array()) {
     if (empty($records)) {
         if (is_resource($process)) {
             $meta_info = proc_get_status($process);
-            $log->debug(microtime(true)." batch:".implode(",", $meta_info));
             
             
-            //$log->debug("Pooling:".$a);
             /*$output = array();
             $a = fread($pipes[2],1);*/            
             /*$StdOut = '';
             //while(!feof($pipes[1])) {                
                 $StdOut .= fgets($pipes[1]);
-                //$log->debug("Pooling:".$StdOut);
             //}
-            $log->debug("Pooling check:".implode(",", $output));
             //$output = stream_get_contents($pipes[1],4);        
-            //$log->debug("check:".$output);*/
         }
     } else {
         $queue = array_merge($queue, $records);
@@ -437,29 +393,22 @@ function merge_file1($records = array()) {
         //$process = proc_open("bash", $descriptor, $pipes);
         $process = proc_open($cmd_parts, $descriptor, $pipes);
         $meta_info = proc_get_status($process);
-        $log->debug("Start batch:".implode(",", $meta_info));
     }
 
     /*if (is_resource($process)) {
-        $log->debug($cmd_parts);
         fwrite($pipes[0], $cmd_parts."\n");
         $meta_info = proc_get_status($process);
-        $log->debug("START batch:".implode(",", $meta_info));
         //sleep(2);
         //$result = fread($pipes[1],15);
         //$result = fread($pipes[2],1);
         $result = fgets($pipes[2]);
-        $log->debug("1/check:".$result);        
         //$output = stream_get_contents($pipes[1],4);        
-        //$log->debug("check:".$output);
     }    */
     /*$cmd_parts = " ts.sh\n";
 
     $process = proc_open('bash', $descriptorspec, $pipes);
     if (is_resource($process)) {
-        $log->debug($cmd_parts);
         fwrite($pipes[0], "source $cmd_parts\n");
-        $log->debug("Starts sh");
     }*/
     }
 
@@ -470,7 +419,6 @@ function merge_file1($records = array()) {
 
 
     /*if (empty($stdout) && !empty($queue)) {        
-        $log->debug("Merge queue:".implode(",", $queue));
         $rec_id = $queue[0];
         $max_parts = max(array_keys($record_chanels[$rec_id]));
         $parts_count = 0;
@@ -482,16 +430,13 @@ function merge_file1($records = array()) {
             //}
         }
         $cmd_parts = $rec_id." ".$parts_count.$cmd_parts;
-        $log->debug("/usr/share/yate/scripts/script.sh ".$cmd_parts);
 
 
         $stdout = popen("/usr/share/yate/scripts/script.sh ".$cmd_parts, 'r');
-        $log->debug("Start:".$stdout);
 
         $query = "UPDATE `call_rec` SET `close`=2 WHERE `record`='".$rec_id."'";    
         $res = query_nores($query);
         //pclose($stdout);            
-        //$log->debug($stdout);
         return true;
     } */
     
