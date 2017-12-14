@@ -104,7 +104,8 @@ function vmBuildNewFilename($caller)
 {
     global $def_time_offset;
     $tmp = strftime("%Y.%m.%d-%H.%M.%S",time()+60*60*$def_time_offset);
-    $tmp = "nvm-$tmp-$caller.slin";
+    //$tmp = "nvm-$tmp-$caller.slin";
+	$tmp = "nvm-$tmp-$caller.au";  //.slin
     return $tmp;
 }
 
