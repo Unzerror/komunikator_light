@@ -50,6 +50,354 @@ $s_statusaccounts = array();
 
 $next_time = 0;            //время апдейта статусов
 $time_step = 90;           //шаг апдейта статусов
+$channel_type = array ("sip", "iax");     //типы каналов
+
+function chektype($type) {
+    global $channel_type;
+
+    $ch_type = stristr($type,'/',true);
+    if(in_array($ch_type,$channel_type) or in_array($type,$channel_type))
+      return "telephony";
+    else
+      return $ch_type;
+}
+
+function search_disconnect($id,$peerid,$res,&$connected) {
+    $sql = array();
+    foreach ($res as $row) {
+        if (($row["chan"]==$id and $row["peerid"]==$peerid) or ($row["chan"]==$peerid and $row["peerid"]==$id)){
+            $connected ["connect"] = $row["connect"];
+            $connected ["chan"] = $row["chan"];
+        }else
+           $sql[]= '("'.$row["connect"].'","'.$row["chan"].'")';
+    }
+    return implode(',', $sql); 
+}
+
+function search_discnct($id,$peerid,$res,&$connected) {
+    $sql = array();
+    foreach ($res as $row) {
+        if ($row["chan"]==$id and $row["peerid"]==$peerid) {
+            $connected ["connect"] = $row["connect"];
+            $connected ["chan"] = $row["chan"];
+        }else
+           $sql[]= '("'.$row["connect"].'","'.$row["chan"].'")';
+    }
+    return implode(',', $sql); 
+}
+
+function chan_startup() {
+    global $ev;
+    global $log;
+
+    $module_type=chektype($ev->GetValue("module"));    
+    $log->debug("start SIP chanell".$module_type);
+
+    if ( $module_type == "telephony") {
+        $start_time = microtime(true);
+        $id = $ev->GetValue("id");
+        $log->debug($start_time." |Start SIP chanell ".$id);
+        if ( $ev->GetValue("direction") == 'incoming') {
+            $callnumber = $ev->GetValue("caller");
+            $called = $ev->GetValue("called");
+        } else {
+            $peerid = $ev->GetValue("peerid");
+            $callnumber = $ev->GetValue("calledfull");
+            $called = $callnumber;            
+        }
+        
+        $query = "INSERT INTO call_logs (time, chan, address, direction, billid, caller, called, ended, gateway,callid)".
+                 " VALUES (".
+                 $start_time.", '".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
+                 $ev->GetValue("billid")."', '".$ev->GetValue("caller")."', '".$called."', '0', ".
+                 "(SELECT description FROM gateways WHERE status='online' and (username = '".$ev->GetValue("username")."' or ".
+                 "username = '".$ev->GetValue("caller")."') LIMIT 1), '".$ev->GetValue("callid")."')";
+        $res = query_nores($query);
+
+
+        //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        //Доделать для случая когда connect раньше start (через execute)
+        //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        /*$query1 = "UPDATE chan_switch SET billid = '".$ev->GetValue("billid")."', status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."' ".
+                  "WHERE ((chan = '".$id."' and peerid = '".$peerid."') or (chan = '".$peerid."' and peerid = '".$id."')) and disconnect IS NULL";
+        $res1 = query_nores($query1);*/
+
+        $query2 = "INSERT INTO chan_start (start, chan, direction, billid, callid, callnumber)".
+             " VALUES (".
+             $start_time.", '".$ev->GetValue("id")."', '".$ev->GetValue("direction")."', '".
+             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$callnumber ."')";
+        $res2 = query_nores($query2);
+    }
+}
+
+function chan_connected() {
+    global $ev;
+    global $log;
+
+    $connect_time = microtime(true);
+    $id = $ev->GetValue("id");
+    $type = chektype($id);
+    $peerid = $ev->GetValue("peerid");    
+    $peertype = chektype($peerid);
+    $targetid = '';
+    $connected = array();
+    $answer = 'NULL';
+    $billid = $ev->GetValue("billid");
+    $callbillid = $billid;
+
+    //$log->debug('Connected:'.$type.'|'.$peertype);
+
+    if (($type == "q-out") or ($peertype == "q-out") or ($peertype == "conf") or ($peerid == "ExtModule"))
+         return false;
+        
+    if ($type == "conf" or $type == "tone") {
+        $id = $peerid;
+        $peerid = $ev->GetValue("id");
+        $targetid = $ev->GetValue("address");
+        $answer = $connect_time;
+        if ($type == "conf")
+            $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.called, o.called as called_gateway, ".
+                                          "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, NULL as called_type ".
+                                  "FROM activ_channels i, ".
+                                  "(SELECT called, billid FROM activ_conf_room WHERE targetid = '".$targetid."' ".
+                                  "UNION SELECT callnumber as called, billid FROM activ_channels WHERE chan='".$id."' ".
+                                                   "and NOT EXISTS (SELECT * FROM activ_conf_room WHERE targetid = '".$targetid."')) o ".
+                                  "WHERE i.chan='".$id."'";
+        else 
+            $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, NULL as called, NULL as called_gateway, ".
+                                  "i.billid as billid, i.billid as callbillid, i.direction as caller_type, NULL as called_type ".
+                                  "FROM activ_channels i WHERE  i.chan = '".$id."' ";
+    } elseif ($peertype == "fork") {
+        if (substr_count($peerid,'/') == 2) {
+            $targetid = substr(strrchr($peerid,'/'),1);
+            $peerid = substr($peerid,0,strrpos($peerid,'/'));
+            $log->debug('FORK PARSER|'.$peerid.'| target:|'.$targetid.'| 2:|'.$peerid);
+            $sql_activ_channels = "SELECT p.caller as caller, i.gateway as caller_gateway, p.called as called, o.gateway as called_gateway, ".
+                                  "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, o.direction as called_type ".
+                                  "FROM activ_channels p, activ_channels i, activ_channels o WHERE  p.chan = '".$id."' and i.callnumber = p.caller and o.callnumber = p.called";            
+        } else {
+            return false;             //не писать инициатора вызова fork/
+        }
+    } elseif ($peertype == "moh") {
+        $targetid = $ev->GetValue("lastpeerid");
+        $answer = $connect_time;
+        $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, 'MoH' as called, o.callnumber as called_gateway, ".
+                              "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, NULL as called_type ".
+                              "FROM activ_channels i, activ_channels o WHERE  i.chan = '".$id."'  and o.chan = '".$targetid."' ";
+    } elseif ($peertype == "q-in")  {
+        if ($ev->GetValue("status") == "answered") {
+            $answer = $connect_time;
+            $targetid = $ev->GetValue("targetid");
+            if(chektype($targetid) == "q-in"){
+                $peerid = $targetid;
+                $targetid = $ev->GetValue("lastpeerid");
+                $log->debug("peerid=$peerid");           
+            }
+        }
+
+        if (chektype($targetid) == "telephony") {
+            $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.called as called, p.callnumber as called_gateway, ".
+                                  "i.billid as billid, IF(i.billid<o.billid or o.billid='',i.billid,o.billid) as callbillid, i.direction as caller_type, NULL as called_type ".
+                                  "FROM activ_channels i, ".
+                                  "(SELECT called, billid FROM call_group_history WHERE chan='".$id."' ORDER BY time DESC LIMIT 1) o, ".
+                                  "(SELECT IF(direction='incoming',caller,called) as callnumber FROM call_logs WHERE chan='".$targetid."' and billid='".$billid."') p  ".
+                                  "WHERE  i.chan = '".$id."'";
+        } else {
+            $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.called as called, NULL as called_gateway, ".
+                              "i.billid as billid, IF(i.billid<o.billid or o.billid='',i.billid,o.billid) as callbillid, i.direction as caller_type, NULL as called_type ".
+                              "FROM activ_channels i, ".
+                              "(SELECT called, billid FROM call_group_history WHERE chan='".$id."' ORDER BY time DESC LIMIT 1) o ".                              
+                              "WHERE  i.chan = '".$id."'";
+        }
+    }
+
+    if ($type == $peertype) {
+        $select_type = "(chan = '".$id."' or peerid = '".$peerid."' or chan = '".$peerid."' or peerid = '".$id."')";
+        $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.callnumber as called, o.gateway as called_gateway, ".
+                              "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, o.direction as called_type  ".
+                              "FROM activ_channels i, activ_channels o WHERE  i.chan = '".$id."' and o.chan = '".$peerid."' ";
+    } else {
+        $select_type = "(chan = '".$id."' or peerid = '".$id."')";
+    }
+      
+
+    $query = "SELECT connect, chan, peerid, billid  FROM chan_switch WHERE ".$select_type." and  disconnect is NULL";
+    $res = query_to_array($query);
+
+    if (!empty($res)) {       
+        $log -> debug ("Fake Billid".$callbillid);        
+        $callbillid = min($res["billid"]);                                // проверить и переделать!!! на callbillid
+        $log -> debug ("NEW_Fake Billid".$callbillid);
+        if ($type == $peertype) {
+            $disc_sql = search_disconnect($id,$peerid,$res,$connected);
+            $answer = $connect_time;
+        } else
+            $disc_sql = search_discnct($id,$peerid,$res,$connected);
+        if ($disc_sql != '' ) {
+            $query1 = "INSERT INTO chan_switch (connect, chan) VALUES ".$disc_sql." ON DUPLICATE KEY UPDATE disconnect = ".$connect_time;
+            $res1 = query_nores($query1);
+        }
+    }
+    
+    //где-то добавить проверку на answerd!!!!
+    if (empty($connected)) {
+        $log->debug("INSERT CHAN CONNECTED");
+        /*$query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, status, reason)".
+                  " VALUES (".
+                  $connect_time.", ".$answer.", '".$id."', '".$peerid."', '".$targetid."', '".
+                  $ev->GetValue("billid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";*/
+        $query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, callbillid, caller, caller_gateway, ".
+                  "called, called_gateway, caller_type, called_type, status, reason) ".
+                  "SELECT ".
+                  $connect_time.", ".$answer.", '".$id."', '".$peerid."', '".$targetid."', IF('".$billid."'='', t.billid, '".$billid."'), ".
+                  "IF(('".$callbillid."'='' or t.callbillid<'".$callbillid."'), t.callbillid,'".$callbillid."'), t.caller, t.caller_gateway, t.called, t.called_gateway, ".
+                  "t.caller_type, t.called_type,'".$ev->GetValue("status")."', '".$ev->GetValue("reason")."' ".
+                  "FROM ( $sql_activ_channels ) t";
+        $res2 = query_nores($query2);
+    }
+
+    $log->debug('Insert connected:'.$type.'|'.$peertype);
+
+    /*$query1 = "UPDATE chan_switch SET disconnect = ".$connect_time." WHERE chan = '".$id."' and disconnect IS NULL"; // and connect != ".$connect_time;
+    $res1 = query_nores($query1);
+
+    $query = "INSERT INTO chan_switch (connect, chan, peerid, targetid, lastpeerid, address, direction, billid, callid,  status, reason)".
+                             " VALUES (".
+                             $connect_time.", '".$id."', '".$ev->GetValue("peerid")."', '".$targetid."', '".
+                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
+                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
+    $res = query_nores($query);*/
+    /*$query1 = "BEGIN; ".
+              "INSERT INTO chan_switch (connect, chan, peerid) ".
+              "VALUES (".$connect_time.", 'fip/21', 'tree'); ".
+              "INSERT INTO chan_switch (connect, chan, peerid) ".
+              "VALUES (".$connect_time.", 'fip/22', 'tree'); ".
+              "COMMIT;";
+    $res1 = query_nores($query1);*/
+
+}  
+
+function chan_disconnected() {
+    global $ev;
+    
+    $id = $ev->GetValue("id");
+    $type = chektype($id);
+    $peerid = $ev->GetValue("lastpeerid");
+
+    if ($type == "q-out")
+         return false;
+
+    $query = "UPDATE chan_switch SET disconnect = ".microtime(true).", status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."' ".
+             "WHERE ((chan = '".$id."' and peerid = '".$peerid."') or (chan = '".$peerid."' and peerid = '".$id."')) and disconnect IS NULL";
+    $res = query_nores($query);
+}
+
+function chan_hangup() {
+    global $ev;
+
+    $id = $ev->GetValue("id");
+    $type = chektype($id);
+
+    if (($type == "fork") or ($type == "q-out")) {
+         return false;
+    } elseif ( $type == "auto_attendant") {
+        $query1 = "UPDATE chan_switch SET disconnect = ".microtime(true).",  status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."' ".
+                  "WHERE targetid = '".$id."' and disconnect IS NULL";
+    } else {
+        $query1 = "UPDATE chan_switch SET disconnect = ".microtime(true).",  status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."' ".
+                   "WHERE (chan = '".$id."' or peerid = '".$id."') and disconnect IS NULL";
+    }
+    $res1 = query_nores($query1);
+
+    if ( $ev->GetValue("module") == 'sip') {
+           $query = "UPDATE chan_start SET hangup = ".microtime(true)." WHERE chan = '".$ev->GetValue("id")."' and hangup is NULL";
+           $res = query_nores($query);
+    }
+}
+
+function call_answered() {
+    global $ev;
+
+    $connect_time = microtime(true);
+    $id = $ev->GetValue("peerid");
+    if (!isset($id)) {
+        $id = $ev->GetValue("targetid");
+    }    
+    $type = chektype($id);    
+    $peerid = $ev->GetValue("id");    
+    $peertype = chektype($peerid);
+    $targetid = '';
+    $connected = array();
+    $billid = $ev->GetValue("billid");
+    $callbillid = $billid;
+
+    if (($type == "q-out") or ($peertype == "fork"))
+         return false;
+    
+    if (($peertype ==  "auto_attendant") or ($peertype ==  "leavemaildb")) {
+        //$id = $ev->GetValue("targetid");        
+        $targetid = $peerid;
+        $peerid = "ExtModule";
+        $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, '".$peertype."' as called, NULL as called_gateway, ".
+                              "i.billid as billid, i.billid as callbillid, i.direction as caller_type, NULL as called_type  ".
+                              "FROM activ_channels i WHERE  i.chan = '".$id."' ";
+    } else {
+        $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.callnumber as called, o.gateway as called_gateway, ".
+                              "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, o.direction as called_type  ".
+                              "FROM activ_channels i, activ_channels o WHERE  i.chan = '".$id."' and o.chan = '".$peerid."' ";
+
+    }
+     
+    
+       
+    $query = "SELECT connect, chan, peerid FROM chan_switch WHERE (chan = '".$id."' or peerid = '".$peerid."' or chan = '".$peerid."' or peerid = '".$id."') and  disconnect is NULL";
+    $res = query_to_array($query);
+    
+    if (!empty($res)) {       
+        if ($type == $peertype) 
+             $disc_sql = search_disconnect($id,$peerid,$res,$connected);
+        else
+            $disc_sql = search_discnct($id,$peerid,$res,$connected);
+        if ($disc_sql != '' ) {
+              $query1 = "INSERT INTO chan_switch (connect, chan) VALUES ".$disc_sql." ON DUPLICATE KEY UPDATE disconnect = ".$connect_time;
+              $res1 = query_nores($query1);
+        }
+    }
+
+    if (empty($connected)) {
+        /*$query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, status, reason)".
+                  " VALUES (".
+                  $connect_time.", ".$connect_time.", '".$id."', '".$peerid."', '".$targetid."', '".
+                  $ev->GetValue("billid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";*/
+        $query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, callbillid, caller, caller_gateway, ".
+                  "called, called_gateway, caller_type, called_type, status, reason) ".
+                  "SELECT ".
+                  $connect_time.", ".$connect_time.", '".$id."', '".$peerid."', '".$targetid."', IF('".$billid."'='', t.billid, '".$billid."'), ".
+                  "IF('".$callbillid."'='' or t.callbillid<'".$callbillid."', t.callbillid,'".$callbillid."'), t.caller, t.caller_gateway, t.called, t.called_gateway, ".
+                  "t.caller_type, t.called_type,'".$ev->GetValue("status")."', '".$ev->GetValue("reason")."' ".
+                  "FROM ( $sql_activ_channels ) t";
+    } else {
+        $query2 = "UPDATE chan_switch SET answer = ".$connect_time.",  status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."', ".
+                  "chan = '".$id."', peerid = '".$peerid."'  ".
+                  "WHERE chan = '".$connected["chan"]."' and connect = ".$connected["connect"];
+    }
+    $res2 = query_nores($query2);
+    /*$query = "SELECT connect,chan FROM chan_switch WHERE ((chan = '".$id."' and peerid = '".$peerid."') or (chan = '".$peerid."' and peerid = '".$id."')) and  disconnect is NULL";
+    $res = query_to_array($query);
+
+    if (empty($res)) {
+        $query1 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, status, reason)".
+                  " VALUES (".
+                  microtime(true)."', ".microtime(true).", '".$id.", '".$peerid."', '".$targetid."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";    
+    } else {
+        $query1 = "UPDATE chan_switch SET answer = ".microtime(true).",  status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."', ".
+                  "chan = '".$id."', peerid = '".$peerid."'  ".
+                  "WHERE chan = '".$res[0]["chan"]."' and connect = ".$res[0]["connect"];
+    }
+                
+    $res1 = query_nores($query1);*/
+}
+
 
 
 // Always the first action to do 
@@ -75,6 +423,12 @@ Yate::Install("user.register");
 Yate::Install("user.unregister");
 Yate::Install("user.auth");
 Yate::Install("call.cdr");
+
+Yate::Install("chan.hangup",80);
+Yate::Install("chan.connected", 80);
+Yate::Install("chan.disconnected", 80);
+Yate::Install("call.answered", 80);
+Yate::Install("chan.startup", 80);
 
 Yate::Install("user.notify");
 Yate::Install("engine.status");
@@ -173,7 +527,8 @@ for (;;) {
                     $ppos = stripos($location,";");
                     if ( $ppos !== false)
                             $location = substr($location, 0 ,  $ppos);
-                    $query = "INSERT INTO ext_connection (extension,location,expires) VALUES ('" . $ev->GetValue("username") . "','$location','" . (time() + $ev->GetValue("expires")) . "') ON DUPLICATE KEY UPDATE expires='" . (time() + $ev->GetValue("expires")) . "'";
+                    //$query = "INSERT INTO ext_connection (extension,location,expires) VALUES ('" . $ev->GetValue("username") . "','$location','" . (time() + $ev->GetValue("expires")) . "') ON DUPLICATE KEY UPDATE expires='" . (time() + $ev->GetValue("expires")) . "'";
+                    $query = "INSERT INTO ext_connection (extension_id, extension,location,expires) VALUES ( (SELECT extension_id FROM extensions WHERE extension='" . $ev->GetValue("username") . "')    ,'" . $ev->GetValue("username") . "','$location','" . (time() + $ev->GetValue("expires")) . "') ON DUPLICATE KEY UPDATE expires='" . (time() + $ev->GetValue("expires")) . "'";
                     $res = query_nores($query);
                     $ev->handled = true;
                     break;
@@ -186,185 +541,151 @@ for (;;) {
                     $res = query_nores($query);
                     $ev->handled = true;
                     break;
-                case "call.cdr":                    
-                    /*
-                    $operation = $ev->GetValue("operation");
-                    $reason = $ev->GetValue("reason");
-
-                    $ended_initialize = 0;
-                    $ended_finalize = 1;
-
-                    switch ($operation) {
-                        case "initialize":
-
-
-                            $gateway_name = '';
-                            $gateway_sql = "SELECT username FROM gateways";
-                            $gateway_ev = query_to_array($gateway_sql);
-                            //для тестовых таблиц------------------------------------------------------------------------------------------
-                            //пропускаем значения звонящего и принимающего через цикл сравнения и тех и других с шлюзами
-                            $billid_ev = $ev->GetValue("billid");
-                            $i = 0;
-                            while ($i <= count($gateway_ev)) {
-                                if ($ev->GetValue("caller") == $gateway_ev[$i]['username']) {
-                                    $gateway_name = $ev->GetValue("caller");
-                                } else if ($ev->GetValue("called") == $gateway_ev[$i]['username']) {
-                                    $gateway_name = $ev->GetValue("called");
-                                }
-                                $i = $i + 1;
-                            }
-
-                            $chan_ev = $ev->GetValue("chan");
-                            $ended_ev = $ended_initialize;
-                            $direction_ev = $ev->GetValue("direction");
-
-                            // обрабатываем событие - звонок на голосовую почту
-                            if ($ev->GetValue("status") == 'cs_voicemail' OR $ev->GetValue("status") == 'cs_attendant') {
-                                $direction_ev = 'outgoing';
-                                $ended_ev = $ended_finalize;
-                            }
-
-                            $query = "INSERT INTO call_logs (time, chan, address, direction, billid, caller, called, duration, billtime, ringtime, status, reason, ended, gateway)"
-                                    . " VALUES ("
-                                    . $ev->GetValue("time") . ", '"
-                                    . $ev->GetValue("chan") . "', '"
-                                    . $ev->GetValue("address") . "', '"
-                                    . $direction_ev . "', '"
-                                    . $ev->GetValue("billid") . "', '"
-                                    . $ev->GetValue("caller") . "', '"
-                                    . $ev->GetValue("called") . "', "
-                                    . $ev->GetValue("duration") . ", "
-                                    . $ev->GetValue("billtime") . ", "
-                                    . $ev->GetValue("ringtime") . ", '"
-                                    . $ev->GetValue("status") . "', '$reason', '$ended_ev', '$gateway_name')";
-                            $res = query_nores($query);
-                            $query1 = "UPDATE extensions SET inuse_count=(CASE WHEN inuse_count IS NOT NULL THEN inuse_count+1 ELSE 1 END) WHERE extension='" . $ev->GetValue("external") . "'";
-                            $res1 = query_nores($query1);
-
-
-                            break;
-
-                        case "update":
-
-                            $chan_ev = $ev->GetValue("chan");
-                            $caller_ev = $ev->GetValue("caller");
-                            $called_ev = $ev->GetValue("called");
-                            $direction_ev = $ev->GetValue("direction");
-                            $ended_ev = 0;
-                            
-                            if (substr($chan_ev, 0, 11) == 'ctc-dialer/') {
-                                if ($callFrom && ($callFrom !== '' || $callFrom !==null)) {
-                                    $callFrom = urldecode($callFrom);
-                                    $chan_ev = substr_replace($ev->GetValue("chan"), 'order_call', 0, 10);
-                                    $query1 = "INSERT INTO detailed_infocall(billid, caller, called, detailed)"
-                                            . " SELECT'"
-                                            . $ev->GetValue("billid") . "', '"
-                                            . $ev->GetValue("called") . "', '"
-                                            . $ev->GetValue("caller") . "', '"
-                                            . $callFrom . "' FROM dual
-                                              WHERE NOT EXISTS (     
-                                              SELECT * FROM detailed_infocall
-                                              WHERE billid = '" . $ev->GetValue("billid") . "' 
-                                                  AND caller = '" . $ev->GetValue("called") . "' 
-                                                  AND called = '" . $ev->GetValue("caller") . "' 
-                                                  AND detailed = '" . $callFrom . "');";
-                                    $res1 = query_nores($query1);
-                                }
-                                $direction_ev = "incoming";
-                                $query = "UPDATE call_logs SET chan = '" . $chan_ev . "', address='" . $ev->GetValue("address") . "', direction='" . $direction_ev . "', billid='" . $ev->GetValue("billid") .
-                                        "', caller='" . $called_ev . "', called='" . $caller_ev . "', duration=" . $ev->GetValue("duration") . ", billtime=" .
-                                        $ev->GetValue("billtime") . ", ringtime=" . $ev->GetValue("ringtime") . ", status='" . $ev->GetValue("status") .
-                                        "', reason='$reason' WHERE (chan='" . $ev->GetValue("chan") . "' OR chan = '" . substr_replace($ev->GetValue("chan"), 'order_call', 0, 10) . "') AND time=" . $ev->GetValue("time");
-                            } else {
-                                $query = "UPDATE call_logs SET address='" . $ev->GetValue("address") . "', direction='" . $direction_ev . "', billid='" . $ev->GetValue("billid") .
-                                        "', caller='" . $caller_ev . "', called='" . $called_ev . "', duration=" . $ev->GetValue("duration") . ", billtime=" .
-                                        $ev->GetValue("billtime") . ", ringtime=" . $ev->GetValue("ringtime") . ", status='" . $ev->GetValue("status") .
-                                        "', reason='$reason' WHERE chan='" . $ev->GetValue("chan") . "' AND time=" . $ev->GetValue("time");
-                            }
-                            $res = query_nores($query);
-                            $query1 = "UPDATE call_logs t1 ".
-                                      "JOIN call_logs t2 ON t2.billid = t1.billid ".
-                                      "SET t1.direction = 'unknown' ".
-                                      "WHERE t1.called = '" . $called_ev . "' and t1.billid = '" . $ev->GetValue("billid") . "' and (SUBSTRING(t1.chan,1, 11)!= 'ctc-dialer/' OR SUBSTRING(t1.chan,1, 11)!= 'order_call/') ".
-                                      "AND ".
-                                      "t2.caller = '" . $called_ev . "' and t2.billid = '" . $ev->GetValue("billid") . "' and (SUBSTRING(t2.chan,1, 11) = 'ctc-dialer/' OR SUBSTRING(t2.chan,1, 11) = 'order_call/')";
-                            $res1 = query_nores($query1);
-                            break;
-
-                        case "finalize":
-                            $billid_ev = $ev->GetValue("billid");
-                            $callFrom = null;
-                            $query = "UPDATE call_logs SET address='" . $ev->GetValue("address") . "', billid='" . $ev->GetValue("billid") .
-                                    "', caller='" . $ev->GetValue("caller") . "', called='" . $ev->GetValue("called") . "', duration=" . $ev->GetValue("duration") . ", billtime=" .
-                                    $ev->GetValue("billtime") . ", ringtime=" . $ev->GetValue("ringtime") . ", status='" . $ev->GetValue("status") . "', reason='$reason', ended=1 WHERE chan='" .
-                                    $ev->GetValue("chan") . "' AND time=" . $ev->GetValue("time");
-
-                            $res = query_nores($query);
-
-                            $query = "INSERT INTO call_history (time, chan, address, direction, billid, caller, called, duration, billtime, ringtime, status, ended, gateway) " .
-                                     "SELECT b.time, b.chan, b.address, ".
-                                     " CASE ".
-                                     "     WHEN SUBSTRING(a.chan,1, 11) = 'order_call/' OR SUBSTRING(b.chan,1, 11) = 'order_call/' ".
-                                     "           THEN 'order_call' ".
-                                     "        WHEN x1.extension IS NOT NULL AND x2.extension IS NOT NULL ".
-                                     "          THEN 'internal' ".
-                                     "        WHEN x1.extension IS NOT NULL ".
-                                     "            THEN 'outgoing' ".
-                                     "        ELSE 'incoming' ".
-                                     "    END direction, ".
-                                     "    b.billid, ".
-                                     "    CASE ".
-                                     "        WHEN x1.firstname IS NULL ".
-                                     "            THEN a.caller ".
-                                     "        ELSE  a.caller ".
-                                     "    END caller, ".
-                                     "    CASE ".
-                                     "        WHEN x2.firstname IS NULL ".
-                                     "            THEN b.called ".
-                                     "        ELSE b.called ".
-                                     "    END called, ".
-                                     "    b.duration, ".
-                                     "    b.billtime, ".
-                                     "    b.ringtime, ".
-                                     "    CASE ".
-                                     "        WHEN b.reason = '' ".
-                                     "            THEN b.status ".
-                                     "        ELSE REPLACE( LOWER(b.reason), ' ', '_' ) ".
-                                     "    END status, ".
-                                     "    CASE ".
-                                     "        WHEN SUBSTRING(b.chan,1, 11)!= 'ctc-dialer/' ".
-                                     "            THEN b.ended = '1' " .
-                                     "        WHEN SUBSTRING(b.chan,1, 11)!= 'order_call/' ".
-                                     "            THEN b.ended = '1' ".
-                                     "        ELSE b.ended " .
-                                     "    END ended, ".
-                                     "    CASE ".
-                                     "        WHEN b.gateway = '' ".
-                                     "            THEN a.gateway ".
-                                     "        ELSE b.gateway ".
-                                     "    END gateway ".
-                                     "FROM call_logs a ".
-                                     "JOIN call_logs b ON b.billid = a.billid AND b.ended = 1 AND b.direction = 'outgoing' ".
-                                     "LEFT JOIN extensions x1 ON x1.extension = a.caller ".
-                                     "LEFT JOIN extensions x2 ON x2.extension = a.called ".
-                                     "WHERE  a.direction = 'incoming' AND b.billid = '$billid_ev' ";
-                            $res = query_nores($query);
-
-                            $query1 = "UPDATE detailed_infocall AS a ".
-                                      "INNER JOIN call_history  AS b ON a.billid = b.billid AND a.caller = b.caller AND a.called = b.called ".
-                                      "SET a.time = b.time ".
-                                      "WHERE b.billid = '$billid_ev'";
-                            $res1 = query_nores($query1);
-                            //очищаем массив и удаляем ненужные записи- - - - - - - - -
-                            //$sql = "DELETE FROM call_logs WHERE billid = '" . $billid_ev . "'";
-                            //$res = query_nores($sql);
-
-
-                            $query = "UPDATE extensions SET inuse_count=(CASE WHEN inuse_count>0 THEN inuse_count-1 ELSE 0 END), inuse_last=" . time() . " WHERE extension='" . $ev->GetValue("external") . "'";
-                            $res = query_nores($query);
-                            break;
+                    case "chan.hangup":
+                    //$log->debug("HANGUP ".$ev->GetValue("id"));
+                    if ($ev->GetValue("lastpeerid") == "ExtModule") {
+                        $billid = $ev->GetValue("billid");
+                        $query = "SELECT  chan FROM call_logs WHERE billid='$billid' AND direction='outgoing' AND ended=0";
+                        $res = query_to_array($query);
+                        if(count($res)) {
+                            $log->debug('hangup:'.$billid.'|'.$res[0]["chan"]);
+                            $m = new Yate("chan.hangup");
+                            $m->params["id"] = $res[0]["chan"];
+                            $m->params["billid"] = $billid;
+                            $m->params["targetid"] = $ev->GetValue("id");
+                            //$m->params["reason"] = 'hangup';
+                            $m->params["answered"] = 'true';                            
+                            $m->Dispatch();
+                        }
+                        /*$targetid = $ev->GetValue("targetid");
+                        $billid = $ev->GetValue("billid");
+                        if ( substr($targetid,0,4) == "fork" ) {
+                            $query = "SELECT  chan FROM call_logs WHERE billid='$billid' AND direction='outgoing' AND ended=0";
+                            $res = query_to_array($query);
+                            $targetid = $res[0]["chan"];
+                        }
+                        $m = new Yate("chan.hangup");
+                        $m->params["id"] = $targetid;
+                        $m->params["billid"] = $billid;
+                        $m->params["targetid"] = $ev->GetValue("id");
+                        $m->params["reason"] = 'hangup';
+                        $m->params["answered"] = 'true';                        
+                        $m->Dispatch();*/
+                        //вариант 2
+                        //$query = "UPDATE call_logs a1 SET a1.duration=($time-a1.time), a1.billtime=a1.duration, ended=1 WHERE billid='" . $ev->GetValue("billid").  "' AND chan='" .$ev->GetValue("targetid"). "' AND ended=0";
+                        //$res = query_to_array($query);                        
                     }
-                    break;*/
+                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
+                             " VALUES (".
+                             microtime(true).", 'hangup','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
+                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
+                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
+                    $res1 = query_nores($query1);
+
+                    chan_hangup();
+
+                    break;
+                case "call.answered":
+                    //$log->debug("ANSWER ".$ev->GetValue("peerid")."|".$ev->GetValue("id"));
+                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
+                             " VALUES (".
+                             microtime(true).", 'answered','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
+                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
+                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
+                    $res1 = query_nores($query1);
+                    
+                    call_answered();
+
+                    break;
+                case "chan.startup":
+                    chan_startup();
+                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, caller, called, calledfull, lastpeerid, status, reason)".
+                             " VALUES (".
+                             microtime(true).", 'startup','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
+                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
+                             $ev->GetValue("caller")."', '".$ev->GetValue("called")."', '".$ev->GetValue("calledfull")."', '".$ev->GetValue("lastpeerid")."', '".
+                             $ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
+                    $res1 = query_nores($query1);
+                    
+                    
+                    
+                    break;
+                case "chan.connected":
+                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
+                             " VALUES (".
+                             microtime(true).", 'connected','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
+                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
+                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
+                    $res1 = query_nores($query1);
+
+                    chan_connected();
+
+                    break;
+                case "chan.disconnected":
+                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
+                             " VALUES (".
+                             microtime(true).", 'disconnected','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
+                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
+                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
+                    $res1 = query_nores($query1);
+                    /*if ($ev->GetValue("lastpeerid") == "ExtModule") {
+                        $targetid = $ev->GetValue("targetid");
+                        $query = "SELECT  chan FROM call_logs WHERE billid='$billid' AND direction='outgoing' AND ended=0";
+                        $res = query_to_array($query);
+                        if(count($res)) {
+                            $m = new Yate("chan.hangup");
+                            $m->params["id"] = $res[0]["chan"];
+                            $m->params["billid"] = $billid;
+                            $m->params["targetid"] = $ev->GetValue("id");
+                            $m->params["reason"] = 'hangup';
+                            $m->params["answered"] = 'true';                        
+                            $m->Dispatch();
+                        }
+                    }*/
+
+                    chan_disconnected();
+
+                    break;
+                case "call.cdr":
+                 $operation = $ev->GetValue("operation");
+				 $reason = $ev->GetValue("reason");
+                 //$log->debug('FULL_CALL:'.$ev->GetValue("called").'||'.$ev->GetValue("calledfull"));
+                 if(empty($ev->GetValue("calledfull")))                      
+                     $called = $ev->GetValue("called");
+                 else
+                     $called = $ev->GetValue("calledfull");
+                 //$log->debug('CALL:'.$called);
+                  switch($operation) {
+					case "initialize":
+                       /* $query = "INSERT INTO call_logs (time, chan, address, direction, billid, caller, called, duration, billtime, ringtime, status, reason, ended, gateway,callid)".
+                                    " VALUES (".
+                                    $ev->GetValue("time").", '".$ev->GetValue("chan")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
+                                    $ev->GetValue("billid")."', '".$ev->GetValue("caller")."', '".$called."', ".$ev->GetValue("duration").", ".
+                                    $ev->GetValue("billtime").", ".$ev->GetValue("ringtime").", '".$ev->GetValue("status")."', '$reason', '0', ".
+                                    "(SELECT description FROM gateways WHERE status='online' and (username = '".$ev->GetValue("username")."' or ".
+                                    "username = '".$ev->GetValue("caller")."') LIMIT 1), '".$ev->GetValue("callid")."')";*/
+                        $query = "UPDATE call_logs SET address='".$ev->GetValue("address")."', direction='".$ev->GetValue("direction")."', time=" . $ev->GetValue("time").
+                                    ", caller='".$ev->GetValue("caller")."', called='".$called."', duration=" . $ev->GetValue("duration"). 
+                                    ", billtime=".$ev->GetValue("billtime").", ringtime=".$ev->GetValue("ringtime").", status='".$ev->GetValue("status").
+                                    "', reason='$reason', callid='".$ev->GetValue("callid")."' WHERE chan='" . $ev->GetValue("chan") . "' AND billid='".$ev->GetValue("billid")."' ";
+                        $res = query_nores($query);
+						break;
+					case "update":
+						$query = "UPDATE call_logs SET address='".$ev->GetValue("address")."', direction='".$ev->GetValue("direction")."', billid='".$ev->GetValue("billid").
+                                        "', caller='".$ev->GetValue("caller")."', called='".$called."', duration=" . $ev->GetValue("duration"). 
+                                        ", billtime=".$ev->GetValue("billtime").", ringtime=".$ev->GetValue("ringtime").", status='".$ev->GetValue("status").
+                                        "', reason='$reason', callid='".$ev->GetValue("callid")."' WHERE chan='" . $ev->GetValue("chan") . "' AND time=" . $ev->GetValue("time");
+						$res = query_nores($query);
+                        break;
+					case "finalize":
+						$query = "UPDATE call_logs SET address='" . $ev->GetValue("address") ."', direction='".$ev->GetValue("direction"). "', billid='" . $ev->GetValue("billid") .
+                                    "', caller='" . $ev->GetValue("caller") . "', called='" . $called . "', duration= IF(" . $ev->GetValue("duration") . ">1E6,0," . 
+                                    $ev->GetValue("duration") . "), billtime=" . $ev->GetValue("billtime") . ", ringtime=" . $ev->GetValue("ringtime") . ", status='" . $ev->GetValue("status") . 
+                                    "', reason=IF('$reason'='',reason,'$reason'), ended=1 WHERE chan='" .  $ev->GetValue("chan") . "' AND time=" . $ev->GetValue("time");
+                        $res = query_nores($query);
+						break;
+				}
+				break;                    
             }
             // This is extremely important.
             //  We MUST let messages return, handled or not
