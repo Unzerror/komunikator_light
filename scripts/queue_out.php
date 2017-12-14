@@ -32,8 +32,10 @@
  * outgoing=external/nodata/queue_out.php
  */
 require_once("libyate.php");
+require_once("lib_queries.php");
 
-$ourcallid = "q-out/" . uniqid(rand(),1);
+//$ourcallid = "q-out/" .$queue."/". uniqid(rand(),1);
+$ourcallid = "q-out/". uniqid(rand(),1);	
 $partycallid = "";
 $caller = "";
 $prompt = "";
@@ -66,18 +68,34 @@ for (;;) {
 	    switch ($ev->name) {
 		case "call.execute":
 		    $partycallid = $ev->GetValue("notify");
-		    $caller = $ev->GetValue("caller");
+			$caller = $ev->GetValue("caller");
+			$called = $ev->GetValue("called");
 		    $prompt = $ev->GetValue("prompt");
-		    $queue = $ev->GetValue("queue");
-		    $ev->handled=true;
+			$queue = $ev->GetValue("queue");
+			$billid = $ev->GetValue("billid");
+			$ev->handled=true;
+			$query = "SELECT last_priority FROM groups WHERE group_id = '$queue'";
+		    $res = query_to_array($query);
+			//$log->debug('query='.$queue.'   result='.$res[0]["last_priority"]);
+		    if ( $res[0]['last_priority'] > 0) {		        		    
+				$called_num = substr($called, 0, 3);
+				$log->debug('called_num='.$called_num.' from:'.$called);
+				//$query = "SELECT last_priority FROM groups WHERE group_id = '$queue'";
+				$query = "SELECT priority FROM group_priority gp JOIN extensions e ON gp.extension_id = e.extension_id WHERE extension = '$called_num'";
+		        $res = query_to_array($query);
+				$priority = 1 - $res[0]['priority']; 
+				//$log->debug('priority='.$priority);
+				$query = "UPDATE groups SET last_priority = ( select max(priority)+'$priority' from group_priority where group_id= '$queue')  WHERE group_id = '$queue'" ;
+				$res=query_to_array($query);
+			}
 		    Yate::Install("chan.hangup",80,"id",$partycallid);
 		    // create call leg to operator
 		    $m = new Yate("call.execute");
 		    $m->params["id"] = $ourcallid;
 		    $m->params["caller"] = $caller;
-		    $m->params["called"] = $ev->GetValue("called");
+		    $m->params["called"] = $called;
 		    $m->params["callto"] = $ev->GetValue("direct");
-		    $m->params["billid"] = $ev->GetValue("billid");
+		    $m->params["billid"] = $billid;
 		    $m->params["maxcall"] = $ev->GetValue("maxcall");
 		    $m->params["cdrtrack"] = "false";
 		    $m->Dispatch();
