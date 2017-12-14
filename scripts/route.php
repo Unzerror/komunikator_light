@@ -40,13 +40,6 @@
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
 
-require_once (__DIR__.'/vendor/autoload.php');
-use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
-$log = new Logger('route');
-$log->pushHandler(new StreamHandler('/var/tmp/register.log', Logger::DEBUG));
-$log->addInfo('==route.php logger start==');
-
 require_once("libyate.php");
 require_once("lib_queries.php");
 
@@ -68,9 +61,7 @@ $stoperror = array("busy", "noanswer", "looping", "Request Terminated", "Routing
 
 function chek_voicemail() {
     global $voicemail;
-    global $log;
 
-        $log->debug('voice_mail');
         $query = "SELECT value FROM settings WHERE param='vm'";
         $res = query_to_array($query);
         if (!$res || !count($res)) {
@@ -201,7 +192,6 @@ function get_SQL_concat($data) {
 
 function makeRoutePhat($rout_hop,$reason) {
     global $route_phat;
-    global $log;
 
     $r_hop = count($route_phat);
             
@@ -226,7 +216,6 @@ function makeRoutePhat($rout_hop,$reason) {
 function writeRoute($route_status) {
     global $route_phat;
     global $ev;
-    global $log;
 
     $m = new Yate("route.register");
     $m->params["connect"] = microtime(true);
@@ -272,7 +261,6 @@ function writeRoute($route_status) {
 function writeRoute1($route_status) {
     global $route_phat;
     global $ev;
-    global $log;
 
     $rout_max_hop = count($route_phat)-1;    
     $time_route = microtime(true);
@@ -287,7 +275,6 @@ function writeRoute1($route_status) {
     $duration = 0;
     $type_message = "route";    
     for ($r_hop = 0; $r_hop < $rout_max_hop; $r_hop++) {    
-            //$log->debug("Route phat[".$r_hop."]:".$route_phat[$r_hop]["route_hop"]."|".$route_phat[$r_hop]["reason"]);
             $time_route = $time_route + $dt;
             $r_reason = $route_phat[$r_hop]["reason"];
             $r_call = $route_phat[$r_hop]["route_hop"];
@@ -312,7 +299,6 @@ function writeRoute1($route_status) {
                 $r_call = $route_phat[$r_hop+1]["route_hop"];
             $sql[]= '("'.$time_route.'","'.$chan.'","'.$type_message.'","'.$billid.'","'.$caller.'","'.$r_call.'","'.$duration.'","'.$r_reason.'")';
     }
-    //$log->debug("Route phat[".$rout_max_hop."]:".$route_phat[$rout_max_hop]["route_hop"]."|".$route_phat[$rout_max_hop]["reason"]);
     $safe_arr = implode(',', $sql);     
     $query = "INSERT INTO call_route (time, chan, direction, billid, caller, called, duration, status) VALUES $safe_arr";         //Добавить таблицу  call_route
     $res = query_nores($query);  
@@ -370,9 +356,6 @@ function get_DID($called) {
  * Note!! this function is used only when diverting calls. does not check for any kind of forward, and mimics the fallback when diverting using fork to send the call to each destination
  */
 function get_distantion($called) {
-    global $log;
-
-    $log->debug('Get Distantion');
 
    // Number on PBX ???   
    $query = "SELECT extension_id, inuse_count FROM extensions WHERE extension='$called'";
@@ -383,7 +366,6 @@ function get_distantion($called) {
     $extension_id = $res[0]["extension_id"];
     $busy_extension = $res[0]["inuse_count"];
       
-    $log->debug('extension_id:'.$extension_id.'/$busy_extension:'.$busy_extension);
     //read route parametrs
     $query = "SELECT param, value FROM pbx_settings WHERE extension_id='$extension_id'";
     $res = query_to_array($query);
@@ -455,7 +437,6 @@ function get_distantion($called) {
  * @return Bool true if number was routed, false otherwise
  */
 function routeToExtension($caller,&$called) {
-    global $log;
     global $ev, $voicemail, $system_prefix, $query_on, $debug_on;
 
     $hop = 0;                                    //количество иттераций пиоска маршрута
@@ -463,11 +444,9 @@ function routeToExtension($caller,&$called) {
     $distantion[$hop] = $called;                 //маршрут переадрессации    
     $cycle = 0;                                              //счетчик повторов
     //поиск маршрута
-    $log->debug('cycle['.$hop.']:'.$distantion[$hop].'[]'.$ev->params["called"]);
     while (strlen($distantion[$hop]) == 3 && $cycle < 2 && $distantion[$hop] != $caller) {
         $hop = $hop + 1;
         $distantion[$hop] = get_distantion($distantion[$hop-1]);
-        $log->debug('cycle['.$hop.']:'.$distantion[$hop]);
         if ($distantion[$hop] != $caller) {            
             $dids = get_DID($distantion[$hop]);
             if ($dids) {
@@ -479,10 +458,8 @@ function routeToExtension($caller,&$called) {
                 if ($path == $distantion[$hop])
                     $cycle = $cycle + 1;
            }
-           $log->debug('-cycle['.$hop.'/'.$cycle.']:'.$distantion[$hop].' from '.$distantion[$hop-1]);         
         }                 
     }
-    $log->debug('cycle: '.$distantion[$hop].'/'.$hop.'/'.$cycle);
 
     if ( $distantion[$hop] == '' )
         return false;
@@ -491,7 +468,6 @@ function routeToExtension($caller,&$called) {
 
     if ((substr($distantion[$hop],0,2)) == "vm" || $cycle > 1 ) {
         $destination = $voicemail;
-        $log->debug('destination_mail:'.$destination);
 
         if (strlen($distantion[$hop]) > 3)
             $called = substr($called,3,6);
@@ -502,15 +478,12 @@ function routeToExtension($caller,&$called) {
             $called = $distantion[$hop-1];
         $ev->params["called"] = $called;
         makeRoutePhat($called,"VM");
-        $log->debug('destination_mail:'.$called);
     
     } elseif (is_numeric($distantion[$hop])) {
-        $log->debug('nimeric');
         if (strlen($distantion[$hop]) == 2) {
             $query = "SELECT group_id FROM groups WHERE extension='$distantion[$hop]'";
             $res = query_to_array($query);
             if ($res[0]["group_id"]) {
-                $log->debug('route to Group '.$distantion[$hop]);
                 routeToGroup($distantion[$hop]);
                 return true;
             }
@@ -518,14 +491,12 @@ function routeToExtension($caller,&$called) {
         if ($hop > 0) {
              $ev->params["call_type"] = "from inside";
              $system_prefix = "from inside";
-             $log->debug('set inside '.$system_prefix);            
         }   
         $called = $distantion[$hop];
         return false;
     
     } else {
-       /*$log->debug('no numeric distantion');
-       if ((substr($distantion[$hop],0,9)) == "external/")
+       /*if ((substr($distantion[$hop],0,9)) == "external/")
           $ev->params["called"] = $distantion[$hop-1];*/
        $destination = $distantion[$hop];
        $ev->params["call_type"] = "from inside";       
@@ -536,7 +507,6 @@ function routeToExtension($caller,&$called) {
     //$ev->params["mohlist"] = "/var/lib/misc/moh/kpv.mp3";
     
     set_retval($destination, "offline");
-    $log->debug('set distantion:'.$destination.'[]'.$ev->params["called"]);
     return true;
 }
 
@@ -546,7 +516,6 @@ function routeToExtension($caller,&$called) {
  */
 function set_moh($time = NULL) {
     global $moh_time_step, $moh_next_time, $s_moh, $last_time, $uploaded_prompts;
-    //global $log;
 
     if (!$time)
         $time = $last_time;
@@ -560,7 +529,6 @@ function set_moh($time = NULL) {
             $l_moh[$playlist_id] = '';
         $moh = "$uploaded_prompts/moh/" . $playlists[$i]["music_on_hold"];
         $l_moh[$playlist_id] .= ($l_moh[$playlist_id] != '') ? ' ' . $moh : $moh;
-        //$log->debug('Set MOH l_moh['.$playlist_id.']: '.$l_moh[$playlist_id]);
     }
     $s_moh = $l_moh;
     
@@ -800,15 +768,12 @@ function set_retval($callto, $error = NULL) {
 
 function last_route($called) {    
     global $ev, $route_phat, $voicemail;
-    global $log;
 
         $counter_route = count($route_phat);
         if ($counter_route>1) {
-             $log->debug('no r2all: '.count($route_phat));
              makeRoutePhat($called,"error_route");
              for ($i = $counter_route-2; $i>=0 ; $i--) {
                  $last_route = $route_phat[$i]["route_hop"];
-                 $log->debug('destins:'.$last_route);
                  if (strlen($last_route) == 3) {
                      $query = "SELECT extension_id FROM extensions WHERE extension='$last_route'";
                      $res = query_to_array($query);
@@ -816,7 +781,6 @@ function last_route($called) {
                          makeRoutePhat($last_route,"VM");
                          $ev->params["called"] = $last_route;                         
                          set_retval($voicemail, "offline");                         
-                         $log->debug('destination_mail:'.$last_route);
                          return true;
                      }
                  }
@@ -829,7 +793,6 @@ function reversCall($username,$caller){
 }
 
 function return_route($called, $caller, $no_forward = false) {
-    global $log;    
     global $ev, $pickup_key, $no_pbx;
     global $max_routes, $s_fallbacks, $caller_id, $caller_name;
     
@@ -850,7 +813,6 @@ function return_route($called, $caller, $no_forward = false) {
     $call_type = $ev->GetValue("call_type");
 
     debug("entered return_route(called='$called',caller='$caller',username='$username',address='$address',already-auth='$already_auth',reason='$reason', trusted='$trusted_auth', call_type='$call_type')");
-    $log->debug('entered return_route (called='.$called.',caller='.$caller.',username='.$username.',address='.$address.',already-auth='.$already_auth.',reason='.$reason.', trusted='.$trusted_auth.', call_type='.$call_type.')');
 
     $params_to_copy = "maxcall,call_type,already-auth,trusted-auth";
     // make sure that if we forward any calls and for calls from pbxassist are accepted    
@@ -864,7 +826,6 @@ function return_route($called, $caller, $no_forward = false) {
               $res = query_to_array($query);
               if (count($res)) {
                    debug("could not auth call but '$caller' seems to be in extensions");
-                   $log->debug('could not auth call but '.$caller.' seems to be in extensions');
                    set_retval(NULL, "noauth");
                    return false;
               }
@@ -885,7 +846,6 @@ function return_route($called, $caller, $no_forward = false) {
     ChekNextRoute($caller,$called);
 
     debug("classified call as being '$call_type'");
-    $log->debug('classified call as being '.$call_type);
     // mark call as already autentified
     $ev->params["already-auth"] = "yes";
     $ev->params["trusted-auth"] = $trusted_auth;
@@ -907,24 +867,19 @@ function return_route($called, $caller, $no_forward = false) {
          if ($call_type != "from inside")    
                $ev->params["pbxguest"] = true;
 
-    $log->debug('reversCall'.$caller);
     if (reversCall($username, $caller)) {
         makeRoutePhat($called,"reversCall");
         return true;
     }
 
-    $log->debug('r2AB '.$called.' from '.$username);
     routeToAddressBook($called, $username);
 
-    $log->debug('r2DID '.$called);
     if (routeToDid($called))
         return true; 
     
-    $log->debug('r2G '.$called.' from '.$caller);    
     if (routeToGroup($called))
          return true;
     
-    $log->debug('makePickUp '.$called.' from '.$caller);         
     if (makePickUp($called, $caller)) {        
         $query1 = "INSERT INTO call_route (time, chan, direction, billid, caller, called, duration, status, reason) ".
                   "VALUES (".microtime(true).", '".$ev->GetValue("id")."', 'pickup','".$ev->GetValue("billid")."', '".
@@ -934,15 +889,12 @@ function return_route($called, $caller, $no_forward = false) {
     }
 
     
-    $log->debug('r2Ext '.$called);
     if (routeToExtension($caller,$called))
            return true;
     
-    $log->debug('r2External call_type='.$call_type.' called_number ='.$initial_called_number.'->'.$called.' trusted_auth='.$trusted_auth);
     if ($call_type == "from outside" && $initial_called_number == $called && $trusted_auth != "yes") {
         // if this is a call from outside our system and would be routed outside(from first step) and the number that was initially called was not modified with passing thought any of the above steps  => don't send it
         debug("forbidding call to '$initial_called_number' because call is 'from outside'");
-        $log->debug('forbidding call to '.$initial_called_number.' because call is from outside');
         makeRoutePhat($called,"noroute");
         set_retval(null, "noautoauth");
         return false;
@@ -956,8 +908,6 @@ function return_route($called, $caller, $no_forward = false) {
              ") AND (g.username IS NULL OR g.status='online') ORDER BY length(coalesce(prefix,'')) DESC, priority LIMIT $max_routes";
     $res = query_to_array($query);
     
-    $log->debug('route2X3x count getways:'.count($res));
-
     if (!count($res)) {
         debug("Could not find a matching dial plan=> rejecting with error: noroute");
         if(!last_route($called)) {
@@ -971,7 +921,6 @@ function return_route($called, $caller, $no_forward = false) {
     $start = count($res) - 1;
     $j = 0;
     $fallback = array();
-    $log->debug('id='.$id.'/'.$start);
     for ($i = $start; $i >= 0; $i--) {
         $fallback[$j] = $ev->params;
         $custom_caller_id = ($res[$i]["callerid"]) ? $res[$i]["callerid"] : $caller_id;
@@ -986,27 +935,21 @@ function return_route($called, $caller, $no_forward = false) {
             $fallback[$j]["caller"] = $system_prefix . $fallback[$j]["caller"];
         $fallback[$j]["called"] = rewrite_digits($res[$i], $called);
         $fallback[$j]["gateway"] = $res[$i]["gateway"];
-        //$log->debug('Getway '.$fallback[$j]["gateway"]);
         if ($res[$i]["formats"] != NULL) {
             $fallback[$j]["formats"] = $res[$i]["formats"];
-            $log -> debug ('formats = not NULL');
         } elseif ($ev->GetValue("formats")) {
             $fallback[$j]["formats"] = $ev->GetValue("formats");
-            $log->debug('formats input');
         }
-        $log -> debug ('formats '.$fallback[$j]["formats"]);
         $fallback[$j]["rtp_forward"] = ($rtp_f == "possible" && $res[$i]["rtp_forward"] == 1) ? "yes" : "no";
         $location = build_location($res[$i], rewrite_digits($res[$i], $called), $fallback[$j]);        
         if (!$location)
             continue;
         $fallback[$j]["location"] = $location;
-        $log->debug('location=('.$fallback[$j]["called"].')'.$location.'/'.$fallback[$j]["caller"].'/'.$system_prefix.' && '.$call_type);
         $j++;        
     }
     if (!count($fallback)) {
         set_retval(NULL, "noroute");
         makeRoutePhat($called,"noroute");
-        $log->debug('noroute');
         return false;
     }
     $best_option = count($fallback) - 1;
@@ -1014,7 +957,6 @@ function return_route($called, $caller, $no_forward = false) {
     makeRoutePhat($fallback[$best_option]["called"],"Getway");
     //makeRoutePhat($fallback[$best_option]["gateway"],"Getway");
     debug("Sending $id to " . $fallback[$best_option]["location"]);
-    $log->debug('Sending '.$id.' to '.$best_option.'('.$fallback[$best_option]["called"].')'. $fallback[$best_option]["location"].'/'.$fallback[$best_option]["gateway"]);
     unset($fallback[$best_option]["location"]);
     $ev->params = $fallback[$best_option];
     unset($fallback[$best_option]);
@@ -1023,13 +965,11 @@ function return_route($called, $caller, $no_forward = false) {
     //  debug("There are ".count($s_fallbacks)." in fallback : ".format_array($s_fallbacks));
     //makeRoutePhat(,"Getway")
     debug("There are " . count($s_fallbacks) . " in fallback");
-    $log->debug('There are '. count($s_fallbacks) . ' in fallback ');
     return true;
 }
 
 function ChekNextRoute($caller,$called) {    
     global $ev;
-    global $log;
 
     //<<добавиьт проверку по полю status на caller
     //$query = "SELECT * FROM call_route WHERE billid = '".$ev->GetValue("billid")."' ORDER BY call_route.time DESC LIMIT 1";
@@ -1039,7 +979,6 @@ function ChekNextRoute($caller,$called) {
 
     if (!empty($res)) {
          if ($res[0]["direction"] == "next" and $res[0]["caller"]==$caller and ($res[0]["chan"] = $ev->GetValue("id")  or substr($res[0]["chan"],0,15) == 'auto_attendant/') ) {
-              $log->debug("Update NEXT");
               if ( ($res[0]["time"]+$res[0]["duration"]) < (microtime(true)+1) ) {
                 $query = "UPDATE call_route SET direction = 'route' WHERE direction = 'next and 'billid = '".$ev->GetValue("billid")."' and time = '".$res[0]["time"]."' ";
                 $res = query_nores($query);
