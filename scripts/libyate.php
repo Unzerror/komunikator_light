@@ -6,21 +6,18 @@
  * PHP object-oriented interface library for Yate
  *
  * Yet Another Telephony Engine - a fully featured software PBX and IVR
- * Copyright (C) 2004-2006 Null Team
+ * Copyright (C) 2004-2014 Null Team
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * This software is distributed under multiple licenses;
+ * see the COPYING file in the main directory for licensing
+ * information for this specific distribution.
+ *
+ * This use of this software may be subject to additional restrictions.
+ * See the LEGAL file in the main directory for details.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
  */
 
 /*
@@ -56,9 +53,7 @@ class Yate
      */
     static function Output($str)
     {
-	$date_format = "d.m.Y H:i:s";
-        $str = date($date_format)." ".$str;
-        global $yate_stderr, $yate_output;
+    global $yate_stderr, $yate_output;
 	if ($str === true)
 	    $yate_output = true;
 	else if ($str === false)
@@ -451,8 +446,14 @@ class Yate
 	$yate_stdout = false;
 	$yate_stderr = false;
 	$yate_output = false;
+	$yate_socket = false;
 	if ($addr) {
-	    $ok = false;
+		$ok = false;
+		if (!function_exists("socket_create")) {
+			$yate_stderr = fopen("php://stderr","w");
+			Yate::Output("PHP sockets missing, initialization failed");
+			return false;
+		}
 	    if ($port) {
 		$yate_socket = @socket_create(AF_INET,SOCK_STREAM,SOL_TCP);
 		$ok = @socket_connect($yate_socket,$addr,$port);
@@ -470,7 +471,6 @@ class Yate
 	    $yate_output = true;
 	}
 	else {
-	    $yate_socket = false;
 	    $yate_stdin = fopen("php://stdin","r");
 	    $yate_stdout = fopen("php://stdout","w");
 	    $yate_stderr = fopen("php://stderr","w");
@@ -505,9 +505,6 @@ function _yate_error_handler($errno, $errstr, $errfile, $errline)
 	case E_USER_NOTICE:
 	    Yate::Output("PHP warning: $str");
 	    break;
-        case E_STRICT:
-            //Yate::Output("PHP runtime notice: $str");
-            break;
 	default:
 	    Yate::Output("PHP unknown error: $str");
     }
