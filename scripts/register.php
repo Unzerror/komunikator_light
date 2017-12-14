@@ -88,15 +88,12 @@ function search_discnct($id,$peerid,$res,&$connected) {
 
 function chan_startup() {
     global $ev;
-    global $log;
 
     $module_type=chektype($ev->GetValue("module"));    
-    $log->debug("start SIP chanell".$module_type);
 
     if ( $module_type == "telephony") {
         $start_time = microtime(true);
         $id = $ev->GetValue("id");
-        $log->debug($start_time." |Start SIP chanell ".$id);
         if ( $ev->GetValue("direction") == 'incoming') {
             $callnumber = $ev->GetValue("caller");
             $called = $ev->GetValue("called");
@@ -132,7 +129,6 @@ function chan_startup() {
 
 function chan_connected() {
     global $ev;
-    global $log;
 
     $connect_time = microtime(true);
     $id = $ev->GetValue("id");
@@ -144,8 +140,6 @@ function chan_connected() {
     $answer = 'NULL';
     $billid = $ev->GetValue("billid");
     $callbillid = $billid;
-
-    //$log->debug('Connected:'.$type.'|'.$peertype);
 
     if (($type == "q-out") or ($peertype == "q-out") or ($peertype == "conf") or ($peerid == "ExtModule"))
          return false;
@@ -171,7 +165,6 @@ function chan_connected() {
         if (substr_count($peerid,'/') == 2) {
             $targetid = substr(strrchr($peerid,'/'),1);
             $peerid = substr($peerid,0,strrpos($peerid,'/'));
-            $log->debug('FORK PARSER|'.$peerid.'| target:|'.$targetid.'| 2:|'.$peerid);
             $sql_activ_channels = "SELECT p.caller as caller, i.gateway as caller_gateway, p.called as called, o.gateway as called_gateway, ".
                                   "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, o.direction as called_type ".
                                   "FROM activ_channels p, activ_channels i, activ_channels o WHERE  p.chan = '".$id."' and i.callnumber = p.caller and o.callnumber = p.called";            
@@ -191,7 +184,6 @@ function chan_connected() {
             if(chektype($targetid) == "q-in"){
                 $peerid = $targetid;
                 $targetid = $ev->GetValue("lastpeerid");
-                $log->debug("peerid=$peerid");           
             }
         }
 
@@ -225,9 +217,7 @@ function chan_connected() {
     $res = query_to_array($query);
 
     if (!empty($res)) {       
-        $log -> debug ("Fake Billid".$callbillid);        
         $callbillid = min($res["billid"]);                                // проверить и переделать!!! на callbillid
-        $log -> debug ("NEW_Fake Billid".$callbillid);
         if ($type == $peertype) {
             $disc_sql = search_disconnect($id,$peerid,$res,$connected);
             $answer = $connect_time;
@@ -241,7 +231,6 @@ function chan_connected() {
     
     //где-то добавить проверку на answerd!!!!
     if (empty($connected)) {
-        $log->debug("INSERT CHAN CONNECTED");
         /*$query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, status, reason)".
                   " VALUES (".
                   $connect_time.", ".$answer.", '".$id."', '".$peerid."', '".$targetid."', '".
@@ -255,8 +244,6 @@ function chan_connected() {
                   "FROM ( $sql_activ_channels ) t";
         $res2 = query_nores($query2);
     }
-
-    $log->debug('Insert connected:'.$type.'|'.$peertype);
 
     /*$query1 = "UPDATE chan_switch SET disconnect = ".$connect_time." WHERE chan = '".$id."' and disconnect IS NULL"; // and connect != ".$connect_time;
     $res1 = query_nores($query1);
@@ -542,13 +529,11 @@ for (;;) {
                     $ev->handled = true;
                     break;
                     case "chan.hangup":
-                    //$log->debug("HANGUP ".$ev->GetValue("id"));
                     if ($ev->GetValue("lastpeerid") == "ExtModule") {
                         $billid = $ev->GetValue("billid");
                         $query = "SELECT  chan FROM call_logs WHERE billid='$billid' AND direction='outgoing' AND ended=0";
                         $res = query_to_array($query);
                         if(count($res)) {
-                            $log->debug('hangup:'.$billid.'|'.$res[0]["chan"]);
                             $m = new Yate("chan.hangup");
                             $m->params["id"] = $res[0]["chan"];
                             $m->params["billid"] = $billid;
@@ -586,7 +571,6 @@ for (;;) {
 
                     break;
                 case "call.answered":
-                    //$log->debug("ANSWER ".$ev->GetValue("peerid")."|".$ev->GetValue("id"));
                     $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
                              " VALUES (".
                              microtime(true).", 'answered','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
@@ -649,12 +633,10 @@ for (;;) {
                 case "call.cdr":
                  $operation = $ev->GetValue("operation");
 				 $reason = $ev->GetValue("reason");
-                 //$log->debug('FULL_CALL:'.$ev->GetValue("called").'||'.$ev->GetValue("calledfull"));
                  if(empty($ev->GetValue("calledfull")))                      
                      $called = $ev->GetValue("called");
                  else
                      $called = $ev->GetValue("calledfull");
-                 //$log->debug('CALL:'.$called);
                   switch($operation) {
 					case "initialize":
                        /* $query = "INSERT INTO call_logs (time, chan, address, direction, billid, caller, called, duration, billtime, ringtime, status, reason, ended, gateway,callid)".
