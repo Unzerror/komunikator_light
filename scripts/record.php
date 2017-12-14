@@ -206,57 +206,6 @@ function recorder($ev) {
     }
 }
 
-function recorder1($ev) {
-    global $record_chanels;
-    
-    $active_paar = geet_active_peer_paar($ev);
-    $peer_paar = filter_peer($active_paar);
-
-    $indx = 0;
-    $sql = array();
-    while (isset($peer_paar["call"][$indx])) {
-        $time = microtime(true);
-        if($peer_paar["call"][$indx]["ended"]) {
-            //метка времени завершения для sox
-            //$query = "UPDATE `call_rec` SET `duration`=($time-`start`) WHERE `record`='".$peer_paar["call"][$indx]["record"]."'";     //Добавить  PART для HOLD            
-        } else {
-            $m = new Yate("chan.masquerade");
-            $m->params["message"] = 'chan.record';
-            $m->params["id"] = $peer_paar["call"][$indx]["peerid"];            
-            $m->params["call"] =  'wave/record//var/lib/misc/records/leg/'.$peer_paar["call"][$indx]["record"].'_0.slin';
-            $m->params["peer"] =  'wave/record//var/lib/misc/records/leg/'.$peer_paar["call"][$indx]["record"].'_1.slin';
-            $m->Dispatch();            
-            //$query = "INSERT INTO `call_rec` (`start`,`record`) VALUES ($time,'".$peer_paar["call"][$indx]["record"]."')";   //Добавить  PART для HOLD            
-        }                
-        //$res = query_nores($query);
-        $indx++;
-    }
-
-    $indx = 0;
-    while (isset($peer_paar["conf"][$indx])) {
-        $conf = $peer_paar["conf"][$indx];
-        
-        if($peer_paar["conf"][$indx]["ended"]) {
-        } else {
-            if (isset($peer_paar["conf"][$indx][1])) {
-                $time = microtime(true);
-                $peer_indx = 0;
-                while (isset($peer_paar["conf"][$indx][$peer_indx])) {
-                    $m = new Yate("chan.masquerade");
-                    $m->params["message"] = 'chan.record';
-                    $m->params["id"] = $peer_paar["conf"][$indx][$peer_indx]["chan"];            
-                    $m->params["call"] =  'wave/record//var/lib/misc/records/leg/'.$peer_paar["conf"][$indx]["record"].'_'.$peer_indx.'.au';                
-                    $m->Dispatch();
-                    $peer_indx++;
-                }
-                //$query = "INSERT INTO `call_rec` (`start`,`record`,`connect_type`,`peer_count`,`called`) VALUES ($time,'".$peer_paar["conf"][$indx]["record"]."','conf',$peer_indx,'".$peer_paar["conf"][$indx]["called"]."')";   //Добавить  PART для HOLD
-                //$res = query_nores($query);
-            }
-        }
-        $indx++;
-    }
-}
-
 function batch_file($ev) {
     global $record_chanels;
     global $stdout;
