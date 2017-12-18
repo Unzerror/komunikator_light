@@ -53,14 +53,60 @@ echo "Installer: Configuring server..."
 	pear install DB
 	sed -i "s/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/" /etc/php/7.0/fpm/php.ini
 	sed -i "/types_hash_max_size/ a\\t\tclient_max_body_size 50m;" /etc/nginx/nginx.conf
-	
+
 	sed -i "s/root \/var\/www\/html;/root \/var\/www;/" /etc/nginx/sites-available/default
 	sed -i "s/index index.html index.htm index.nginx-debian.html;/index index.php index.html index.htm;/" /etc/nginx/sites-available/default
 	sed -i "s/server_name _;/server_name kommunikator;/" /etc/nginx/sites-available/default
 	sed -i "/pass the PHP scripts to FastCGI server listening/ a\\tlocation ~ \\.php$ {\\ninclude snippets\/fastcgi-php.conf;" /etc/nginx/nginx.conf
 
 
+echo "Trying to generate SSL certificate"
+	cert_dir="/etc/yate/keys"
+	mkdir -p "${cert_dir}"
 
+	crt_dir=${cert_dir}
+	key_dir=${cert_dir}
+	csr_dir=${cert_dir}
+	mkdir -p "${key_dir}"
+	mkdir -p "${crt_dir}"
+	key="${key_dir}/komunikator.key"
+	crt="${crt_dir}/komunikator.crt"
+	csr="${csr_dir}/komunikator.csr"
+
+	answers_csr() {
+    	echo --
+    	echo MariEl
+    	echo Yoshkar-Ola
+    	echo Komunikator.ru
+    	echo dev
+    	echo 127.0.0.1
+    	echo support@komunikator.ru
+    	echo ""
+    	echo ""
+	}
+
+	# check if a new certificate should be generated
+	# generate if certificate is already expired or if it will expire today
+	replace=1
+	if [ -f "${crt}" ]; then
+        str=`openssl x509 -in ${crt} -enddate -noout`
+        len=${#str}
+        expr_date=`date -u -d"${str:9:len}"`
+        now=`date -u`
+        cmp_dates "${now}" "${expr_date}" && replace=0
+	fi
+	if [ "${replace}" = 1 ]; then
+        # generate key file
+        openssl genrsa -des3  -passout pass:freesentral -out "${key}" 1024  2> /dev/null
+        echo "Generating SSL key"
+        answers_csr | openssl req -new -passin pass:freesentral -key "${key}" -out "${csr}" 2> /dev/null
+        echo "Generating SSL csr"
+        cp "${key}" "${key}.orig"
+        openssl rsa -passin pass:freesentral -in "${key}.orig" -out "${key}" 2> /dev/null
+        openssl x509 -req -days 1825 -in "${csr}" -signkey "${key}" -out "${crt}" 2> /dev/null
+        rm -f "${key}.orig"
+        rm -f "${csr}"
+	fi
 
 
 
