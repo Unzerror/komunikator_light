@@ -49,16 +49,48 @@ echo "Installer: Configuring the database..."
     mysql -uroot -p$dbuserpw -e "GRANT ALL PRIVILEGES ON * . * TO 'kommunikator'@'localhost';"
 	mysql -uroot -p$dbuserpw -e "FLUSH PRIVILEGES;"
 
-echo "Installer: Configuring server..."
+echo "Installer: Configuring web server..."
 	pear install DB
+	sed -i "s/# Required-Start:    \$remote_fs \$network/# Required-Start:    \$remote_fs \$network mysql php7.0-fpm/" /etc/init.d/yate
 	sed -i "s/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/" /etc/php/7.0/fpm/php.ini
-	sed -i "/types_hash_max_size/ a\\t\tclient_max_body_size 50m;" /etc/nginx/nginx.conf
+	sed -i "/types_hash_max_size/ a\ \t client_max_body_size 50m;" /etc/nginx/nginx.conf
 
-	sed -i "s/root \/var\/www\/html;/root \/var\/www;/" /etc/nginx/sites-available/default
-	sed -i "s/index index.html index.htm index.nginx-debian.html;/index index.php index.html index.htm;/" /etc/nginx/sites-available/default
-	sed -i "s/server_name _;/server_name kommunikator;/" /etc/nginx/sites-available/default
-	sed -i "/pass the PHP scripts to FastCGI server listening/ a\\tlocation ~ \\.php$ {\\ninclude snippets\/fastcgi-php.conf;" /etc/nginx/nginx.conf
+	#nginx www config
+	fe="/etc/nginx/sites-available/default"	
+	e="server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        root /var/www;
+        index index.php index.html index.htm;
+        server_name kommunikator;
+        location / {
+                try_files \$uri \$uri/ =404;
+        }
+        location ~ \.php$ {
+                include snippets/fastcgi-php.conf;
+                fastcgi_pass unix:/run/php/php7.0-fpm.sock;
+        }
+        location ~ /\.ht {
+                deny all;
+        }
+	}"
+	if [ -e "$fe" ]; then
+	cp $fe $fe".bak"
+	fi
+	echo "$e" > "$fe"
 
+	#start page
+	e="<meta http-equiv=\"refresh\" content=\"0;url=/kommunikator\">"
+	echo "$e" > "/var/www/index.html"
+
+echo "Installer: Copy web server..."	
+    cp ~/$repo_name/scripts/* /usr/share/yate/scripts -Rf
+	mkdir -p /var/www/kommunikator
+	cp ~/$repo_name/src/* /var/www/kommunikator -Rf
+	cp ~/$repo_name/etc/* /etc -Rf
+	cp ~/$repo_name/misc/* /var/lib/misc -Rf
+	ln -s /var/lib/misc/auto_attendant /var/www/kommunikator/auto_attendant
+	ln -s /var/lib/misc/moh /var/www/kommunikator/moh
 
 echo "Trying to generate SSL certificate"
 	cert_dir="/etc/yate/keys"
