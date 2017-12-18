@@ -9,11 +9,10 @@
 GNU GPLv3
 
 #### Инсталляция
-[Файл-сценарий](https://komunikator.ru/repos/IP-PBX.sh) для автоматической установки проекта.
+[Файл-сценарий](https://raw.githubusercontent.com/komunikator/komunikator_light/master/repos/IP-PBX.sh) для автоматической установки проекта.
 [Домашняя страница проекта.](https://komunikator.ru/ip_ats)
 
-#### Самостоятельная сборка deb-пакета:
-Для полноценной работы проекта и всех его модулей необходимы:
+#### Для полноценной работы проекта и всех его модулей необходимы:
 - nginx
 - MySQL
 - PHP-FPM
@@ -22,12 +21,10 @@ GNU GPLv3
 - madplay
 - lame
 
-После установки всех зависимостей необходимо выполнить в консоли
+Для установки проекта в консоли выполнить:
 ```sh
-  debuild clean
-  debuild -b
-  dpkg -i kommunikator_1.1-all.deb
-  apt-get install -f
+  wget https://raw.githubusercontent.com/komunikator/komunikator_light/master/repos/IP-PBX.sh  
+  sudo bash ./IP-PBX.sh
 ````
 
 #### Конфигурация системы
