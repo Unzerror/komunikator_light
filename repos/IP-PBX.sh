@@ -83,7 +83,7 @@ echo "Installer: Configuring web server..."
 	e="<meta http-equiv=\"refresh\" content=\"0;url=/kommunikator\">"
 	echo "$e" > "/var/www/index.html"
 
-echo "Installer: Copy web server..."	
+echo "Installer: Copy web server..."
     cp ~/$repo_name/scripts/* /usr/share/yate/scripts -Rf
 	mkdir -p /var/www/kommunikator
 	cp ~/$repo_name/src/* /var/www/kommunikator -Rf
@@ -92,7 +92,7 @@ echo "Installer: Copy web server..."
 	ln -s /var/lib/misc/auto_attendant /var/www/kommunikator/auto_attendant
 	ln -s /var/lib/misc/moh /var/www/kommunikator/moh
 
-echo "Trying to generate SSL certificate"
+echo "Installer: Trying to generate SSL certificate..."
 	cert_dir="/etc/yate/keys"
 	mkdir -p "${cert_dir}"
 
@@ -140,15 +140,17 @@ echo "Trying to generate SSL certificate"
         rm -f "${csr}"
 	fi
 
+echo "Installer: acsess rules..."
+	mkdir -p /var/lib/misc/records/  /var/lib/misc/records/leg
+	chown -R www-data:www-data /var/lib/misc/moh /var/lib/misc/auto_attendant /var/lib/misc/records/
+	chown -R yate:yate /var/lib/misc/records /var/lib/misc/records/leg
+	chmod 755 -R /var/lib/misc/moh/ /var/lib/misc/auto_attendant/ /var/lib/misc/records/
 
-
-
-
-
-
-
-
-
-
+echo "Installer: restart service..."
+	systemctl daemon-reload
+	service yate stop
+	service nginx reload
+	service php7.0-fpm restart
+	service yate start
 
 rm -Rf $repo_name
