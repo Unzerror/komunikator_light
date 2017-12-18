@@ -93,6 +93,7 @@ echo "Installer: Configuring web server..."
 	echo "$e" > "/var/www/index.html"
 
 echo "Installer: Copy web server..."
+    rm -Rf /usr/share/yate/scripts/*
     cp ~/$repo_name/scripts/* /usr/share/yate/scripts -Rf
 	mkdir -p /var/www/kommunikator
 	cp ~/$repo_name/src/* /var/www/kommunikator -Rf
@@ -153,6 +154,7 @@ echo "Installer: acsess rules..."
 	mkdir -p /var/lib/misc/records/  /var/lib/misc/records/leg
 	chown -R www-data:www-data /var/lib/misc/moh /var/lib/misc/auto_attendant /var/lib/misc/records/
 	chown -R yate:yate /var/lib/misc/records /var/lib/misc/records/leg
+	chmod +x /usr/share/yate/scripts/*
 	chmod 755 -R /var/lib/misc/moh/ /var/lib/misc/auto_attendant/ /var/lib/misc/records/
 
 echo "Installer: restart service..."
