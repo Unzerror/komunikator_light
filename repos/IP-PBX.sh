@@ -7,6 +7,14 @@ release=$(lsb_release -cs)
 arch=$(uname -m)
 
 echo "Komunikator 1.5a0 ($release $arch)"
+udistro="xenial"
+if [ $udistro != $release ]
+then
+echo "Установка Komunikator 1.5.a0 может производиться только на ОС Ubuntu 16.04"
+exit 1
+fi
+
+
 apt -qq update
 
 echo "Installer: Generating and setting the DB user passwords..."
@@ -51,12 +59,13 @@ echo "Installer: Configuring the database..."
 
 echo "Installer: Configuring web server..."
 	pear install DB
+	sed -i "s/NO_START=1/NO_START=0/" /etc/default/yate
 	sed -i "s/# Required-Start:    \$remote_fs \$network/# Required-Start:    \$remote_fs \$network mysql php7.0-fpm/" /etc/init.d/yate
 	sed -i "s/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/" /etc/php/7.0/fpm/php.ini
 	sed -i "/types_hash_max_size/ a\ \t client_max_body_size 50m;" /etc/nginx/nginx.conf
 
 	#nginx www config
-	fe="/etc/nginx/sites-available/default"	
+	fe="/etc/nginx/sites-available/default"
 	e="server {
         listen 80 default_server;
         listen [::]:80 default_server;
