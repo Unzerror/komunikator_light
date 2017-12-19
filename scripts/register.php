@@ -38,6 +38,14 @@
  *  version (version 3 as well).
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
+
+require_once (__DIR__.'/vendor/autoload.php');
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+$log = new Logger('register');
+$log->pushHandler(new StreamHandler('/var/tmp/register.log', Logger::DEBUG));
+$log->addInfo('==register.php logger start==');
+
 require_once("libyate.php");
 require_once("lib_queries.php");
 
@@ -52,340 +60,1661 @@ $next_time = 0;            //время апдейта статусов
 $time_step = 90;           //шаг апдейта статусов
 $channel_type = array ("sip", "iax");     //типы каналов
 
+
+//типы сообщений
+//
+//Убрал в функцию
+$msg_keys["type"]["base_type"] = ["cdr","connect","full","history"];
+$msg_keys["type"]["cdr"] = ["call.cdr","chan.startup"];
+$msg_keys["type"]["connect"] = ["chan.connected","chan.disconnected","call.answered","chan.hangup"];
+$msg_keys["type"]["dynamic"] = ["route.register","rec.vm"];
+
+
+//Работа с cdr
+//параметры Cdr сообщений
+$msg_keys["cdr"]["param"] = ["time", "id", "chan", "address","direction","billid","caller","called","duration",
+                             "billtime","ringtime","status","reason","callid","operation","calledfull",
+                             "username","timestamp","callnumber","callbillid","ended","gateway","SQL"];
+/*@"SQL" - insert,update,delet=update  + для виртуальных сущностей unset без SQL
+@"type"  - тип исходного
+*/
+//SQL таблица хранения данных
+$msg_keys["cdr"]["sql_table"] = ("call_logs");
+//записываемые в SQL параметры
+$msg_keys["cdr"]["sql"] = ["time", "chan", "address","direction","billid","caller","called","duration",
+                           "billtime","ringtime","status","reason","callid",//"calledfull",
+                           "callbillid","ended","gateway"];
+//SQL ключи для записи или апдейта
+$msg_keys["cdr"]["sql_key"]   = ["time", "chan"];
+
+//полное сообщение
+$msg_keys["full"]["param"] = ["timestamp","operation","time","connect","disconnect","answer",
+                              "chan","id","address","direction","billid","callbillid","connect_type",
+                              "peerid","targetid","lastpeerid","username",
+                              "callnumber","caller","called","calledfull","callid",
+                              "caller_gateway","called_gateway","caller_type","called_type",
+                              "gateway",
+                              "duration","billtime","ringtime",
+                              "status","reason","ended"];
+//сообщение об соединениях
+//поменял CHAN на ID!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+$msg_keys["connect"]["param"] = ["timestamp","operation","connect","disconnect","answer",
+                                 "id","direction","billid","callbillid",
+                                 "chan","peerid","targetid","lastpeerid","username","address",
+                                 "callnumber","caller","called","calledfull","callid",
+                                 "caller_gateway","called_gateway","caller_type","called_type",                                 
+                                 "duration","billtime","ringtime",
+                                 "status","reason","ended","SQL"];
+$msg_keys["connect"]["sql"] = ["connect","disconnect","answer","chan","peerid","targetid","billid","callbillid",
+                               "caller","called","caller_gateway","called_gateway","caller_type","called_type",
+                               "status","reason"];
+$msg_keys["connect"]["sql_table"] = ("chan_switch");                            
+$msg_keys["connect"]["sql_key"] = ["connect", "chan"];
+
+$msg_keys["activ_conf_room"]["param"] = ["connect","disconnect","chan","targetid","billid","callbillid","caller","called","caller_gateway","caller_type"];//,"SQL"];
+$msg_keys["activ_conf_room"]["sql_key"]   = ["connect", "chan"];
+
+$msg_keys["queue"]["param"] = ["chan","peerid","targetid","billid","callbillid","caller","called"];//,"SQL"];
+
+$msg_keys["gateways"]["param"] = ["account","gateway","protocol","server","username","enabled","description","domain",
+                                  "localaddress","status","interval","callerid","callername","send_extension"];
+
+$msg_keys["history"]["param"] = ["connect","disconnect","answer","duration","connect_type","chan","peerid",
+                                 "billid","callbillid","caller","called",
+                                 "caller_gateway","called_gateway","caller_type","called_type","record",
+                                 "ended","status","reason","SQL"];
+$msg_keys["history"]["sql"] = ["connect","duration","connect_type","callbillid","caller","called",
+                                 "caller_gateway","called_gateway","caller_type","called_type","record",
+                                 "ended","status","reason"];
+$msg_keys["history"]["sql_table"] = ("history");
+$msg_keys["history"]["sql_key"] = ["connect","caller","called","callbillid"];
+
+
+
+class YMessage {
+   public $param = array();
+   public $type;
+   private $keys = array();   
+
+   //* версия 1
+   function __construct($type) {
+      global $msg_keys;
+      $this->type = $type;
+      if ($type !== "dynamic")      
+          $this->keys = $msg_keys[$type]["param"];    
+   }
+
+   function ReadMsg($ev) {
+       if ($this->type == "dynamic")
+            $this->keys = explode(";",$ev->GetValue("keys"));
+       
+       foreach ($this->keys as $row)
+             $this->param[$row] = $ev->GetValue($row);
+       $this->param["timestamp"] = microtime(true);
+       $this->param["operation"] = is_null($this->GetValue("operation")) ? $ev->name : $this->param["operation"];
+       
+       $parametrs = $ev->GetValue("dynamic_parametrs");
+       if (!is_null($parametrs)) {
+            $dynamic_parametrs= explode(";",$parametrs);
+            foreach($dynamic_parametrs as $name)  {
+                $indx = 0;
+                $this->param[$name] = $ev->GetValue($name);                
+                while (!is_null($ev->GetValue($name.".".$indx)))
+                    $this->param[$name.".".$indx] = $ev->GetValue($name.".".$indx++);
+            }
+        } 
+    }
+
+   function msgToSQL($operation = "") {
+       global $msg_keys;
+       //global $log;
+
+       if ($operation == "")
+            $operation = $this->GetValue("SQL");
+
+       $sql_data = $this->reduceMessage("sql");
+       $id = $msg_keys[$this->type]["sql_key"];
+       foreach ($id as $s_key) {
+            //$log->debug("[".$this->type."]".$s_key."=".$sql_data[$s_key]);
+            if (!isset($sql_data[$s_key]))
+                  $operation = "no_sql";
+       }
+       
+       if ($operation == "insert") {
+            $query = "INSERT INTO ".$msg_keys[$this->type]["sql_table"]." (`".implode("`, `", array_keys($sql_data))."`) VALUES ('".implode("', '", $sql_data)."')";    
+       } elseif ($operation == "update" or $operation == "delete") {            
+            foreach ($sql_data as $key => $value) {
+                if (in_array($key,$id))
+                     $condition[] = "`".$key."`". " = '".$value."'";
+                else
+                     $updates[] = "`".$key."`". " = '".$value."'";
+            }
+            $query = sprintf("UPDATE %s SET %s WHERE %s", $msg_keys[$this->type]["sql_table"], implode(', ', $updates), implode(' and ', $condition));
+       } else
+          return false;
+       //$log->debug($query);
+       query_nores($query);
+       return true;
+   }
+
+    function reduceMessage($type) {
+        global $msg_keys;
+        $keys = $msg_keys[$this->type][$type];
+        foreach ($keys as $row)
+           $new_data[$row] = empty($this->param[$row]) ? NULL : $this->param[$row];
+        return $new_data;
+    }
+
+    function convertMessageType($type) {
+        global $msg_keys;
+
+        $this->type = $type;
+        $this->keys = $msg_keys[$type]["param"];
+        $data = $this->param;
+        $this->param = array();        
+        foreach ($this->keys as $row)
+                 $this->param[$row] = empty($data[$row]) ? NULL : $data[$row];
+    }
+
+    function GetValue($key, $defvalue = null) {
+        if (isset($this->param[$key]))
+            return $this->param[$key];
+        return $defvalue;
+    }
+
+    function CopyDataFromMsg($source_msg) {
+        //global $log;
+        foreach ($this->keys as $row) {            
+            $this->param[$row] = $source_msg->GetValue($row);
+            //$log->debug("Copy ".$row." to ".$this->param[$row]);
+        }
+    }
+
+    function UpdateFromMessage($source_msg) {
+        foreach ($this->keys as $row)
+            $this->param[$row] = is_null($source_msg->GetValue($row)) ? $this->param[$row] : $source_msg->GetValue($row);
+    }
+
+    function UpdateValue($key, $value) {
+        $this->param[$key] = $value;
+    }
+
+    function InsertRowData($row_data) {
+         foreach ($this->keys as $key)
+              $this->param[$key] = isset($row_data[$key]) ? $row_data[$key] : NULL;
+    }
+
+    function LogMsg($InitStr = "") {
+        global $log;
+        //$log->debug("MSG [`".implode("`,`", array_keys($this->param))."`] VALUES ('".implode("','", $this->param)."')");
+        $log->debug("msg[".$this->type."]='".implode("','", $this->param)."'");
+    }
+}
+
+//Данные для обработки
+//перечень хранимых данных
+$data_strct["cdr"]["keys"] = ["time","chan","address","direction","billid","callbillid","caller","called",
+                              "callnumber","duration","billtime","ringtime","status","reason","ended","gateway","callid","SQL"];
+//SQL источник данных при загрузке " `table_name` WHERE `a`=12"
+$data_strct["cdr"]["source"] = ("`activ_channels` ORDER BY `time`");  
+//SQL считываемые данные
+//$data_strct["cdr"]["sql_data"] = $data_strct["cdr"]["keys"];
+
+$data_strct["connect"]["keys"] = ["connect","disconnect","answer","chan","peerid","targetid","billid","callbillid",
+                                            "caller","called","caller_gateway","called_gateway","caller_type","called_type",
+                                            "connect_type","status","reason","SQL"];
+$data_strct["connect"]["source"] = ("activ_connections");
+//$data_strct["connect"]["sql_data"] = $data_strct["connect"]["keys"];
+
+//Шлюзы
+//SELECT description FROM gateways WHERE status='online' and 
+//(username = '".$ev->GetValue("username")."' or "."username = '".$ev->GetValue("caller")."') LIMIT 1
+$data_strct["gateways"]["keys"] = ["gateway","protocol","server","username","enabled","description","domain",
+                                    "localaddress","status","interval","callerid","callername","send_extension","SQL"];
+$data_strct["gateways"]["source"] = ("gateways");
+//$data_strct["gateways"]["sql_data"] = $data_strct["gateways"]["keys"];
+$data_strct["activ_conf_room"]["keys"] = ["start","connect","disconnect","duration","chan","targetid","billid","callbillid","root_peer",
+                                          "caller","called","caller_gateway","caller_type"];//,"SQL"];
+$data_strct["activ_conf_room"]["source"] = ("activ_conf_room");
+$data_strct["queue"]["keys"] = ["chan","targetid","billid","callbillid","caller","called"];//,"SQL"];
+$data_strct["queue"]["source"] = ("activ_queue");
+
+
+$data_strct["history"]["keys"] = ["connect","duration","connect_type","chan","peerid","billid","callbillid","caller","called",
+                                  "caller_gateway","called_gateway","caller_type","called_type","record",
+                                  "ended","status","reason","SQL"];
+$data_strct["history"]["source"] = ("`history` WHERE `ended`=0");
+//$data_strct["history"]["sql_data"] = $data_strct["gateways"]["keys"];
+
+
+class ActivObjects
+{    
+    private $keys = array();
+    private $type ;
+    public $events = array();
+    private $events_org = array();
+
+    function __construct($type) {
+        global $data_strct;        
+        
+        $this->type = $type;
+        $this->keys = $data_strct[$type]["keys"];
+        $this->ReadActiveData();        
+    }
+
+    function ReadActiveData() {
+        global $data_strct;
+        
+        $sql="SELECT * FROM ".$data_strct[$this->type]["source"];
+        $res = query_to_array($sql);
+        foreach ($res as $ev_indx => $row)                
+            foreach ($this->keys as $arg_indx => $value)
+                      $this->events[$ev_indx][$arg_indx] = empty($row[$value]) ? NULL : $row[$value];
+    }
+
+    /*индексы ключей массива 
+     *$keys: NULL - все, "chan" -конкретный №, array = ["chan","time"] - список*/
+    function colFind($keys = NULL) {
+        global $data_strct;
+        if (is_array($keys))
+            foreach ($keys as $indx => $key)
+                      $col[$indx] = array_search($key,$data_strct[$this->type]["keys"]);
+        elseif (is_null($keys))
+            $col = range(0,count($data_strct[$this->type]["keys"])-1);
+        else
+            $col = array_search($keys,$data_strct[$this->type]["keys"]);             
+        return $col;    
+    }
+
+    /*№ ключа в ключевое слово
+     *$cols: NULL - все, "1" -конкретнле значение, array = [1,0,5] - список */
+    function keyFind($cols = NULL) {
+        global $data_strct;
+        if (is_array($cols))
+             foreach ($cols as $indx => $col)
+                       $key[$indx] = $data_strct[$this->type]["keys"][$col];
+        elseif (is_null($cols))
+            $key = $data_strct[$this->type]["keys"];
+        else
+           $key = $data_strct[$this->type]["keys"][$cols];
+        return $key;    
+    }
+
+    function getCellValue($col,$row)  {
+        global $data_strct;
+        if ( is_numeric($row)&& is_numeric($col))
+            if ($row>=0 && $row<count($this->events))
+                if ($col>=0 && $col<count($data_strct[$this->type]["keys"]))
+                     return $this->events[$row][$col];
+        return NULL;
+    }
+    
+    function getCellValueFromKey($key,$row)  {
+        $col = $this->colFind($key);
+        return $this->getCellValue($col,$row);
+    }
+    
+    function GetValue($keys = NULL, $rows = NULL, $direct = "key") {
+        //global $log;        
+        //$log->debug("[".$rows."]'".implode("','", $rows)."'");    
+        $cols = $this->colFind($keys);
+        //$log->debug("[".$cols."]'".implode("','", $cols)."'");    
+        if(is_null($rows)) 
+            $rows = range(0,count($this->events)-1);
+        //$log->debug("[".$rows."]'".implode("','", $rows)."'");    
+        if(!is_array($cols)) {
+            if (!is_array($rows)) 
+                return $this->getCellValue($cols,$rows);
+            $cols = array($cols);            
+        }
+        if (!is_array($rows))
+            $rows = array($rows);
+        //$log->debug("[".$cols."]'".implode("','", $cols)."'");
+        //$log->debug("[".rows."]'".implode("','", $rows)."'");    
+        $res = array();
+        foreach ($rows as $row_indx => $row)            
+            foreach ($cols as $col)
+                if ($direct == "key")             
+                   $res[$this->keyFind($col)][$row_indx] = $this->getCellValue($col,$row);
+                elseif ($direct == "rows")
+                   $res[$row_indx][$this->keyFind($col)] = $this->getCellValue($col,$row);
+                   //$res[$row_indx][$this->keyFind($col)] = $this->getCellValue($col,$row);   //было, как лучше получать данных???
+                                                                                               //лучше строками или столбцами???
+        //$log->debug("Search[".$row_indx."][".$this->keyFind($col)."]=".$this->getCellValue($col,$row));
+        return $res;
+    }
+
+    function SearchRowWithValue($keys, $value = [""], $row_number = null) {
+        //global $log;
+        //$log->debug("Input:".$keys."=".$value);
+        $res = array();
+
+        $cols = $this->colFind($keys);
+        if(!is_array($cols)) {
+            $cols = [$cols];
+            //$log->debug(implode("','", $cols));
+        }
+        if(!is_array($value)) {
+            $value = [$value];
+            //$log->debug(implode("','", $value));
+        }
+
+        if (count($this->events) > 0) {
+            if(!isset($row_number)) 
+               $row_number = range(0,count($this->events)-1);
+            //$log->debug(implode("','", $cols)."  and ".implode("','", $value)." to ".implode("','", $row_number));
+            foreach ($cols as $col) {
+               //$log->debug("col=".$col);
+               if (is_int($col))
+                  foreach ($row_number as $row) {
+                     //$log->debug("[".$row."][".$col."]:".$this->events[$row][$col]." in ('".implode("','", $value)."')");
+                     if (array_search($this->events[$row][$col],$value) !== FALSE) {
+                          $res["row"][] = $row;
+                          $res["col"][] = $col;
+                          $res["value"][] = $this->events[$row][$col];
+                          //$log->debug("Find[".$row."][".$col."]".$this->events[$row][$col]);
+                     }
+                  }
+            }
+        }
+        return $res;
+    }
+
+    function MessageInsert($msg) {
+        global $data_strct;
+
+        $indx = count($this->events);
+        foreach ($this->keys as $col=>$key)
+            $this->events[$indx][$col] = $msg->GetValue($key);
+        if(!empty($this->colFind("SQL")))
+            $this->events[$indx][$this->colFind("SQL")] = "insert";
+    }
+
+    function DeletRow($rows){
+        rsort($rows);
+        foreach ($rows as $row) {
+           if (array_key_exists($row, $this->events)) {
+                   unset($this->events[$row]);
+                   $this->events = array_values($this->events);            
+           }
+        }
+    }
+
+    function UpdateValue($key,$rows,$value) {
+        if (!is_array($rows))
+             $rows = [$rows];
+        if (!empty($rows)) {
+            foreach ($rows as $row) {
+                  $this->events[$row][$this->colFind($key)] = $value;                  //проверить если $row=3 ???
+                  if(!empty($this->colFind("SQL")))
+                      if ( is_null($this->events[$row][$this->colFind("SQL")]))
+                            $this->events[$row][$this->colFind("SQL")] = "update";
+            }
+        }
+    }
+
+    function UpdateFromMessage($row,$msg) {
+        //global $log;
+
+        //$msg->LogMsg();
+        //$log->debug("Billtime:".$msg->param["billtime"]."|".$msg->GetValue("billtime")); 
+        foreach ($this->keys as $col=>$key) {                        
+             $this->events[$row][$col] = isset($msg->param[$key]) ? $msg->GetValue($key) : $this->events[$row][$col];
+             //$log->debug($key."[".$row."][".$col."]:".$msg->param[$key]."|".$this->events[$row][$col]); 
+        }
+        if(!empty($this->colFind("SQL")))
+            $this->events[$row][$this->colFind("SQL")] = ($this->events[$row][$this->colFind("SQL")] == "insert") ? "insert" : "update";        
+    }
+
+    function UpDateMsg($msg) {
+        global $msg_keys;
+        //global $log;
+        
+        $keys = $msg_keys[$this->type]["sql_key"];
+        //$log->debug("Insert msg in ".$this->type." keys:".implode("','", $keys));
+        foreach ($keys as $s_key) {
+            //$log->debug("0:".$s_key." is ".$msg->GetValue($s_key));
+            if (is_null($msg->GetValue($s_key)))
+                return false;
+            else
+                $key_value [] = $msg->GetValue($s_key);
+        }
+        
+        $result = $this->SearchRowWithValue($keys,$key_value);
+        //$log->debug("KEY rows :".implode("; ", $result["row"]));
+        //$log->debug("retury [`".implode("`,`", array_keys($rows))."`] VALUES ('".implode("','", $rows)."')");
+        if(!empty($result)) {            
+            $rows = array_count_values($result["row"]);
+            //$log->debug("retury [`".implode("`,`", array_keys($rows))."`] VALUES ('".implode("','", $rows)."')");
+            foreach ($rows as $row=>$count) {
+                if (current($rows)>=count($keys)) {
+                     //$log->debug("Update");
+                     $this->UpdateFromMessage(key($rows),$msg);
+                     return true;
+                }
+            }
+        }
+        //$log->debug("Insert");
+        $this->MessageInsert($msg);
+        return true; 
+    }
+
+    function GetRow($row,$diff="normal") {
+        global $data_strct;
+        if ($diff=="normal") {
+             foreach ($data_strct[$this->type]["keys"] as $indx => $key)
+                 $res[$key] = $this->events[$row][$indx];
+        } else {
+            foreach ($data_strct[$this->type]["keys"] as $indx => $key)
+                 $res[$key] = ($this->events[$row][$indx] == $this->events_org[$row][$indx]) ? NULL : $this->events[$row][$indx];
+        }
+        return $res;
+    }
+
+
+    function LogTable()  {
+        global $log;
+        foreach ($this->events as $indx=>$data)
+           $log->debug($this->type."[".$indx."]='".implode("','", $data)."'");
+    }
+
+    //получение msg из строки для SQL
+    function GetMsgFromRow($row, $type, $dtype="normal") {        
+        if ($dtype == "normal")
+             $diff="normal";
+        else {
+            /*if($this->getCellValueFromKey("SQL",$row) == "insert")   >>>>>>>>>>>>>Пока без дифф записи
+                $diff="normal";
+            else
+                $diff="diff";*/
+            $diff="normal";
+        }
+        
+        $msg = new YMessage($type);
+        $msg->InsertRowData($this->GetRow($row,$diff));
+        return $msg;
+    }
+    
+    //Дифф копия для UPDATE-ов
+    function FixDiff($rows = "",$type="no_full") {
+        $this->events_org = $this->events;
+        //if (($type == "full") and                              //>>>>>>>>>>>>>>>>Добавить по строкам и для фиксации DELET
+        //     $this->
+    }
+
+    function DataToMySQL($rows = null) {
+        //global $log;
+
+        $count_events = count($this->events);        
+        if ($count_events>0)  {            
+            if (is_null($rows))  {
+                $all_rows = range(0,$count_events-1);
+                $res = $this->SearchRowWithValue("SQL");
+                if (empty($res))
+                     $rows = $all_rows;
+                else
+                    $rows = array_diff($all_rows, $res["row"]);                
+            }            
+            if(empty($rows))
+                 return true;
+            
+            $type = $this->type;
+            //$this->LogTable();
+            $msg = new YMessage($type);
+            //$log->debug("Insert Rows[".$type."]:".implode("','", $rows));
+            foreach ($rows as $indx=>$row) {
+                $msg->InsertRowData($this->GetRow($row));                
+                if( $msg->msgToSQL() )
+                    $this->events[$row][$this->colFind("SQL")] = NULL;                
+            }
+            //$this->LogTable();
+        }
+    }
+
+    //поиск не пустых или заданного типа
+    function SearchRowWithType($key,$type = null,$number_rows = null) {
+        $res = array();
+        $count_events = count($this->events);
+        $col = $this->colFind($key);
+        if($count_events>0 and isset($col))  {
+            if (!isset($number_rows))
+                 $number_rows = range(0,$count_events-1);
+            $result = $this->SearchRowWithValue($key,[""],$number_rows);
+            if (empty($result))
+                $rows1 = $number_rows;
+            else
+                $rows1 = array_diff($number_rows, $result["row"]);
+            if (isset($type)) {
+                foreach($rows1 as $row)
+                   if ( chektype($this->getCellValue($col,$row)) == $type )
+                         $res[] = $row;
+            } else
+                $res = $rows1;
+        }
+        return $res;
+    }
+}
+
+
+function ClearActiveTable($msg) {
+    global $activ_channels;    
+    global $activ_connections;
+    global $call_history;
+    global $conf_room;
+    global $active_queue;                                                            //удалять в другом месте
+    global $log;
+
+    if ($msg->param["operation"] == "finalize") {
+        //$msg->LogMsg();
+        //$activ_channels->LogTable();
+        $callbillid = $msg->GetValue("callbillid");
+        $active_peers = $activ_channels->SearchRowWithValue("callbillid",$callbillid);
+        $ends_peers = $activ_channels->SearchRowWithValue("ended",0,$active_peers["row"]);
+        if (empty($ends_peers)) {
+             //$log->debug("ALL CLOSED:".$callbillid);
+             $activ_channels->DeletRow($active_peers["row"]);
+             $active_con = $activ_connections->SearchRowWithValue("callbillid",$callbillid);
+             //$log->debug("active_con:".implode("','", $active_con["row"]));
+             if (!empty($active_con))
+                   $activ_connections->DeletRow($active_con["row"]);
+
+             $history = $call_history->SearchRowWithValue("callbillid",$callbillid);             
+             if (!empty($history)) {
+                //call_rec.finalize             
+                $calls_rec = $call_history->GetValue("record",$history["row"]);
+                $ended_recid = array_diff($calls_rec["record"], array(''));
+                $call_history->LogTable();
+                //$log->debug("call_id:".implode("','", $calls_rec["record"]));
+                //$log->debug("call_id:".implode("','", $ended_recid));
+                $m = new Yate("register.endcall");
+                $m->params["dynamic_parametrs"] = "record";
+                $id =0;
+                foreach ($ended_recid as $recid) 
+                   $m->params["record.".$id++] = $recid;
+                if ($id>0)
+                    $m->Dispatch();
+
+                $call_history->DeletRow($history["row"]);
+             }
+             $room = $conf_room->SearchRowWithValue("callbillid",$callbillid);
+             if (!empty($room))
+                   $conf_room->DeletRow($room["row"]);
+
+             //$activ_channels->LogTable();
+             //$activ_connections->LogTable();
+             //$call_history->LogTable();
+             //$conf_room->LogTable();             
+        }
+    }    
+}
+
+function RegisterInfo($msg)   {
+    global $call_history;
+    global $conf_room;
+    //global $log;
+
+    $new_keys = array();
+    $dynamic_info_keys["call"] = ["connect","duration","chan","peerid","callbillid","caller","called",
+                                  "caller_gateway","called_gateway","caller_type","called_type","record","ended"];
+    $dynamic_info_keys["conf"] = ["called","callbillid","record","ended","dynamic_parametrs"];
+    $dynamic_info_keys["conf.dynamic_parametrs"] = ["connect","chan","callbillid","caller","caller_gateway","caller_type"];
+
+    $new_events = $call_history->SearchRowWithType("SQL");
+
+    if (!empty($new_events)) {
+        $m = new Yate("register.info");
+
+        $calls = $call_history->SearchRowWithType("connect_type","call",$new_events);
+        if (!empty($calls)) {
+            $new_keys[] = "call";
+            $m->params["call"] = implode(";", $dynamic_info_keys["call"]);
+            $new_data = 0;
+            $call_data = $call_history->GetValue($dynamic_info_keys["call"],$calls,"rows");
+            foreach ($call_data as $data)                
+                $m->params["call.".$new_data++] = implode("|", $data);
+            //$log->debug(implode("/",$calls).":".implode("/",$data[0]));
+        }
+        
+        $confs = $call_history->SearchRowWithType("connect_type","conf",$new_events);
+        if (!empty($confs)) {
+            //$call_history->LogTable();
+            //$conf_room->LogTable();
+
+            $new_keys[] = "conf";
+            $m->params["conf"] = implode(";", $dynamic_info_keys["conf"]);
+            $m->params["conf.dynamic_parametrs"] = implode(";", $dynamic_info_keys["conf.dynamic_parametrs"]);
+            $conf_count = 0;
+            
+            $conf_rooms = $conf_room->SearchRowWithValue("connect");                                //постоянные конференции
+            $open_cnf_rows = $call_history->SearchRowWithValue("ended",0,$confs);
+            if (!empty($open_cnf_rows)) {
+
+                
+                
+                $close_cnf_rows = array_diff($confs,$open_cnf_rows["row"]);
+                
+                $open_rows = $call_history->GetValue("called",$open_cnf_rows["row"]);
+
+                //$log->debug("OPEN:".implode(";",$open_cnf_rows["row"])."|Close:".implode(";",$close_cnf_rows).">>Open num:".implode(";",$open_rows["called"]));
+                
+                $open_data = $call_history->GetValue($dynamic_info_keys["conf"],$open_cnf_rows["row"],"rows");
+                foreach ($open_data as $data) {
+                    //$log->debug("conf_open.".$conf_count.":".implode("|", $data));
+                    $m->params["conf.".$conf_count] = implode("|", $data);
+                    $peer = $conf_room->SearchRowWithValue("called",$data["called"]);
+                    $act_peer = $conf_room->SearchRowWithValue("disconnect",[""],$peer["row"]);
+                    $active = array_diff($act_peer["row"],$conf_rooms["row"]);
+                    $active_data = $conf_room->GetValue($dynamic_info_keys["conf.dynamic_parametrs"],$active,"rows");
+                    $act_count = 0;
+                    foreach ($active_data as $a_data) {
+                        //$log->debug("peer.".$act_count.":".implode("|", $a_data));
+                        $m->params["conf.".$conf_count.".".$act_count++] = implode("|", $a_data);
+                    }
+                    $conf_count++;
+                }
+            } else {
+                $close_cnf_rows = $confs;
+                $open_rows["called"] = array();
+            }
+            
+            if (!empty($close_cnf_rows)) {
+                $close_rows = $call_history->GetValue("called",$close_cnf_rows);
+                $close_num = array_unique($close_rows["called"]);
+                $open_num = array_unique($open_rows["called"]);
+                $full_close = array_diff($close_num,$open_num);
+                //$log->debug("CLOSE:".implode(";",$full_close)."|".implode(";",$close_num)."-".implode(";",$open_num)." is ".implode(";",$close_cnf_rows));
+                if(!empty($full_close)) {
+                    $full_close_rows = $call_history->SearchRowWithValue("called", $full_close, $close_cnf_rows);                    
+                    $close_data = $call_history->GetValue($dynamic_info_keys["conf"], $full_close_rows["row"],"rows");
+                    //$log->debug("close[".$full_close_rows["row"]."]:".implode(";",$full_close_rows["row"]));
+                    foreach ($close_data as $s_data) {
+                        //$log->debug("conf_close.".$conf_count.":".implode("|", $s_data));
+                        $m->params["conf.".$conf_count++] = implode("|", $s_data);                        
+                    }
+                }
+            }
+        }       
+
+        //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        //Добавить очередь и дозвон на кого идет
+        //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        if (!empty($new_keys)) {
+            $m->params["dynamic_parametrs"] = implode(";", $new_keys);            
+            $m->Dispatch();
+        }
+    }
+}
+
+function closePhpScripts($msg) {
+    global $activ_connections;
+
+    if (($msg->param["operation"] == "chan.hangup")  and ($msg->param["peerid"] == "ExtModule")) {
+        //$msg->LogMsg();
+        //$activ_connections->LogTable();
+        
+        $type = chektype($msg->GetValue("targetid"));
+        if (in_array($type, ["auto_attendant", "leavemaildb"]))
+            $ourcallid = $msg->GetValue("targetid");
+        else {
+            $rows = $activ_connections->SearchRowWithValue("disconnect",$msg->GetValue("disconnect"));
+            if (!empty($rows))
+                 $ourcallid = $activ_connections->getCellValueFromKey("peerid",$rows["row"][0]);
+            else
+                return false;
+        }
+        $m = new Yate("chan.hangup");        
+        $m->params["id"] = $ourcallid;
+        $m->params["billid"] = $msg->GetValue("billid");
+        $m->params["answered"] = 'true';        
+        $m->Dispatch();
+    }
+}
+
+function UpdateHistory($msg)  {
+    global $call_history;
+    global $activ_connections;
+    global $conf_room;
+    global $log;
+
+    $delta_time = 0.2;
+    
+    $new_data_rows = $activ_connections->SearchRowWithType("SQL");    
+    if (!empty($new_data_rows)) {
+        //$call_history->LogTable();        
+        //$activ_connections->LogTable();
+        //$log->debug("New SQL:".implode("','", $new_data_rows));
+        $conf_rows = $activ_connections->SearchRowWithValue("connect_type","conf",$new_data_rows);        
+        if(!empty($conf_rows)) {            
+            //$conf_room->LogTable();
+            $new_data_rows = array_diff($new_data_rows,$conf_rows["row"]);                                    //исключение конференций
+            
+            //$callbill_ids = $activ_connections->GetValue("callbillid",$conf_rows["row"]);
+            $targets_ids = $activ_connections->GetValue("targetid",$conf_rows["row"]);
+            $targets = array_count_values($targets_ids["targetid"]);
+            
+           $conf_rows_static = $conf_room->SearchRowWithValue("connect");
+           if(empty($conf_rows_static)) {
+                $conf_rows_static["row"] = array();
+           }
+
+           foreach ($targets as $targetid=>$count) {
+                //$log->debug("Insert targetID:".$targetid);
+                $conf_rows_targets = $conf_room->SearchRowWithValue("targetid",$targetid);
+                $conf_rows_targets["row"] = array_diff($conf_rows_targets["row"],$conf_rows_static["row"]);                                  //все 
+
+                $conf_connect_time = $conf_room->GetValue(["connect","disconnect"],$conf_rows_targets["row"]);
+                $time_connects = array_merge($conf_connect_time["connect"],$conf_connect_time["disconnect"]);
+                $time_connects = array_diff($time_connects, array(''));
+                rsort($time_connects);                                                 //поток событий                
+                //$log->debug("Timeline:".implode("','", $time_connects));
+                $duration = 0;
+                if (count($time_connects)>1)    {
+                    $history_conf = $call_history->SearchRowWithValue("connect",$time_connects[1]);
+                    if (!empty($history_conf)) {
+                        if(count($history_conf["row"])>1) {
+                            $history_conf1 = $call_history->SearchRowWithValue("connect_type","conf",$history_conf["row"]);
+                            $history_conf["row"] = $history_conf1["row"];                              
+                        }
+                        if (!empty($history_conf)) {
+                            $conf_msg = new YMessage("history");
+                            $conf_msg->param["connect"] = $time_connects[1];                            
+                            $conf_msg->param["ended"] = 1;
+                            $conf_msg->param["SQL"] = "update";
+                            $duration = $time_connects[0] - $time_connects[1];
+                            $conf_msg->param["duration"] = $duration > $delta_time ? (int)round($duration) : -1;
+                            $call_history->UpdateFromMessage($history_conf["row"][0],$conf_msg);
+                            //$log->debug("Close Conf:".$history_conf["row"][0]);
+                        }
+                    }
+                }
+                $history_conf_new = $call_history->SearchRowWithValue("connect",$time_connects[0]);
+                if (!empty($history_conf_new)) {
+                    $history_conf_new = $call_history->SearchRowWithValue("connect_type","conf",$history_conf["row"]);
+                }
+                if (empty($history_conf_new)) {
+                    $conf_active = $conf_room->SearchRowWithValue("disconnect",[""],$conf_rows_targets["row"]);                    
+                    if(!empty($conf_active)) {
+                        $conf_msg = new YMessage("history");
+                        $conf_msg->param["connect"] = $time_connects[0];                        
+                        $conf_msg->param["connect_type"] = "conf";
+                        $conf_msg->param["ended"] = 0;                        
+                        $conf_msg->param["SQL"] = "insert";
+
+                        $conf_msg->param["callbillid"]= $conf_room->getCellValueFromKey("callbillid",$conf_active["row"][0]);
+                        $conf_msg->param["called"]= $conf_room->getCellValueFromKey("called",$conf_active["row"][0]);
+                        $caller = $conf_room->GetValue("caller",$conf_active["row"]);
+                        $callers = implode("/", $caller["caller"]);
+                        $conf_msg->param["caller"] = $callers;
+                        //$conf_msg->param["record"] = $duration > $delta_time ? $call_history->getCellValueFromKey("record",$history_conf["row"][0]) : $time_connects[0].uniqid();
+                        if ( $duration > 0  and $duration < $delta_time) {
+                            //$log->debug("Hash [".$history_conf["row"][0]."]:".$call_history->getCellValueFromKey("record",$history_conf["row"][0]));
+                            $conf_msg->param["record"] = $call_history->getCellValueFromKey("record",$history_conf["row"][0]);
+                        } else
+                            $conf_msg->param["record"] = $time_connects[0].uniqid();
+                        $call_history->MessageInsert($conf_msg);
+                    }
+                }
+            }        
+            //Закрытие Конференций и открытие новых в истории
+            //$call_history->LogTable();
+        }
+        
+        //$log->debug("Start");
+        foreach($new_data_rows as $new_data_row) {
+            //$log->debug("Start2:".$new_data_row);
+            $msg = $activ_connections->GetMsgFromRow($new_data_row,"history");            
+            //$msg->LogMsg();
+            if (!is_null($msg->GetValue("caller")) && !is_null($msg->GetValue("called")) && !is_null($msg->GetValue("callbillid")) && !is_null($msg->GetValue("connect"))) {
+                if ($msg->getValue("SQL") == "update")  {
+                    $connect = $msg->GetValue("connect");
+                    $rows_history = $call_history->SearchRowWithValue("connect",$connect);                    
+                    if (count($rows_history["row"])>1) {
+                        $row_add = $call_history->SearchRowWithValue("callbillid", $msg->GetValue("callbillid"), $rows_history["row"]);         //$rows["row"][0]
+                        $rows_history["row"] = $row_add["row"];
+                    }
+                    //$log->debug("ROW:".$rows_history["row"].":".implode("','", $rows_history)."|".$connect."|".$call_history->getCellValue(0,1));
+                    if (!empty($rows_history))   {
+                        switch ($msg->GetValue("connect_type")) {
+                            case "fork":
+                                $caller = $msg->GetValue("called");
+                                $caller_gate = $msg->GetValue("called_gateway");
+                                $caller_direction = $msg->GetValue("called_type");
+                                $msg->param["called"] = $msg->GetValue("caller");
+                                $msg->param["called_gateway"] = $msg->GetValue("caller_gateway");
+                                $msg->param["called_type"] = $msg->GetValue("caller_type");
+                                $msg->param["caller"] = $caller;
+                                $msg->param["caller_gateway"] = $caller_gate;
+                                $msg->param["caller_type"] = $caller_direction;
+                                break;                            
+                            case "telephony":
+                                $caller = $msg->GetValue("caller");
+                                $answer = $msg->GetValue("answer");
+                                //$connect = $msg->GetValue("connect");                                
+                                if(is_null($answer)) {
+                                    $msg->param["connect_type"] = "fork";
+                                } else {
+                                    $msg->param["connect_type"] = "call";
+                                    $delta = $answer - $connect;
+                                    if ($delta > $delta_time)  {                                                        //порог разделения событий - можно ввести больший запас                                         
+                                        $msg->param["connect"] = $answer;                                        
+                                        if (is_null($call_history->getCellValueFromKey("ended",$rows_history["row"][0])))    {                                              
+                                              $msg->param["SQL"] = "insert";
+                                              $call_history->MessageInsert($msg);
+                                              $msg->param["duration"] = (int)round($delta);
+                                              $msg->param["connect_type"] = "fork";
+                                              $msg->param["connect"] = $connect;
+                                              $msg->param["ended"] = 1;
+                                              $msg->param["SQL"] = "update";
+                                        }
+                                    }  elseif (is_null($call_history->getCellValueFromKey("record",$rows_history["row"][0])))    {
+                                        $msg->param["record"] = $msg->GetValue("connect").uniqid();
+                                        //$log->debug("Do It!");
+                                    }
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+
+                        if (!is_null($msg->GetValue("disconnect"))) {
+                              $msg->param["duration"] = (int)round($msg->GetValue("disconnect") - $msg->GetValue("connect"));
+                              $msg->param["ended"] = 1;
+                        }
+                        $call_history->UpdateFromMessage($rows_history["row"][0],$msg);
+                    } else  {
+                       $msg->param["SQL"] = "insert";
+                       //$log->debug("INSERT");
+                    }
+                }
+
+                if ($msg->getValue("SQL") == "insert") {                    
+                    switch ($msg->GetValue("connect_type")) {
+                        case "fork":
+                            $caller = $msg->GetValue("called");
+                            $caller_gate = $msg->GetValue("called_gateway");
+                            $caller_direction = $msg->GetValue("called_type");
+                            $msg->param["called"] = $msg->GetValue("caller");
+                            $msg->param["called_gateway"] = $msg->GetValue("caller_gateway");
+                            $msg->param["called_type"] = $msg->GetValue("caller_type");
+                            $msg->param["caller"] = $caller;
+                            $msg->param["caller_gateway"] = $caller_gate;
+                            $msg->param["caller_type"] = $caller_direction;
+                            break;
+                        case "telephony":
+                            if(is_null($msg->GetValue("answer")))
+                                 $msg->param["connect_type"] = "fork";              //можно ввести другой тип звонка direct_call
+                            else {
+                                 $msg->param["connect_type"] = "call";
+                                 $msg->param["record"] = $msg->GetValue("connect").uniqid();
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                    $call_history->MessageInsert($msg);
+                    //$msg->LogMsg();
+                    //$call_history->LogTable();
+                    //$log->debug("Insert2");
+                }
+                //$call_history->LogTable();
+            }
+        }
+    }
+}
+
+/*function UpdateConfQueue($msg) {
+    global $conf_room;
+    global $activ_connections;
+    global $log;
+    
+    //$conf_room->LogTable();
+    $count_all_room = count($conf_room->events);
+    if ($count_all_room>0) {
+         $direct_room = $conf_room->SearchRowWithValue("connect");         
+         $count_direct_room = empty($direct_room) ? 0 : count($direct_room["row"]);      //>=0  штатные комнаты
+         $count_peer_room = $count_all_room - $count_direct_room;                      //>=0  не штатные комнаты  (constant)
+
+         $aciv_peer_room = $conf_room->SearchRowWithValue("disconnect");
+         $count_no_cloused_room = empty($aciv_peer_room) ? 0 : count($aciv_peer_room["row"]);              //закрытые комнаты
+         $count_open_room = $count_no_cloused_room - $count_direct_room;                                   //Активные комнаты
+         if ($count_open_room>0)
+             $open_room = array_diff($aciv_peer_room["row"],$direct_room["row"]);
+    } else {
+        $count_open_room = 0;
+    }
+    //$log->debug("Confroom:".$count_all_room."|:".$count_peer_room."|".$count_open_room);
+
+
+    $actv_ch = $activ_connections->SearchRowWithValue("disconnect");
+    if (empty($actv_ch))
+        $count_ch = 0;
+    else {
+        $chan = $activ_connections->getCellValueFromKey("peerid",$actv_ch["row"]);
+        foreach ($chan["peerid"] as $row=>$peer)
+            if (chektype($peer) == "conf")                                                          // Проверку на Update
+                  $actv_peer_conf [] = $row;
+        $count_ch = isset($actv_peer_conf) ? count($actv_peer_conf) : 0;
+    }
+    $log->debug("Confroom:".$count_open_room." |:".$count_ch);
+
+    //if( $count_open_room>0 )
+}*/
+
+function UpdateConfQueue($msg) {
+    global $conf_room;
+    global $activ_connections;
+    //global $log;
+    
+    $count_events = count($activ_connections->events);
+    if($count_events>0)  {
+        $all_rows = range(0,$count_events-1);
+        $res = $activ_connections->SearchRowWithValue("SQL");
+        if (empty($res))
+            $rows = $all_rows;
+        else
+            $rows = array_diff($all_rows, $res["row"]);            
+        //$log->debug("room VALUES ".implode("','", $rows));
+
+        if(empty($rows))
+            return true;
+        
+        //$activ_connections->LogTable();
+        //$log->debug("New Room");
+        //$conf_room->LogTable();
+            
+        foreach ($rows as $row)
+             if (chektype($activ_connections->getCellValueFromKey("peerid",$row)) == "conf") 
+                  $actv_peer_conf[$row] = $activ_connections->getCellValueFromKey("SQL",$row);
+        //$log->debug("room [`".implode("`,`", array_keys($actv_peer_conf))."`] VALUES ('".implode("','", $actv_peer_conf)."')");
+
+        if (isset($actv_peer_conf)) {
+             foreach ($actv_peer_conf as $row=>$sql) {
+                     $msg = $activ_connections->GetMsgFromRow($row,"activ_conf_room");                     
+                     //$msg->LogMsg();
+                     $conf_room->UpDateMsg($msg);
+                     //$conf_room->LogTable();
+            }
+        }
+    }    
+}
+
+function UpdateConnection($msg) {
+    global $activ_channels;
+    global $activ_connections;
+    global $log;
+
+    //$log->debug("Update data");
+    //$activ_connections->LogTable();
+    //UpdateActiveConnects
+    //1.FromChannels    
+    if (in_array($msg->param["operation"], ["initialize", "chan.startup"])) {
+        //$activ_connections->LogTable();
+        $act_con = $activ_connections->SearchRowWithValue("chan", $msg->param["chan"]);        
+        if (!empty($act_con)) {
+            $row = $act_con["row"];            
+            $activ_connections->UpdateValue("caller", $row, $msg->param["callnumber"]);
+            $activ_connections->UpdateValue("caller_gateway", $row, $msg->param["gateway"]);
+            $activ_connections->UpdateValue("caller_type", $row, $msg->param["direction"]);
+            if ( $msg->param["operation"] == "initialize") {
+                  $activ_connections->UpdateValue("billid", $row, $msg->param["billid"]);
+                  $activ_connections->UpdateValue("callbillid", $row, $msg->param["callbillid"]);
+            }
+            //$log->debug("Update caller:".implode("','", $row)." caller:".$msg->param["callnumber"]);
+            //$activ_connections->LogTable();
+        }
+        $act_con1 = $activ_connections->SearchRowWithValue("peerid", $msg->param["chan"]);
+        if (!empty($act_con1)) {
+            $row1 = $act_con1["row"];
+            $activ_connections->UpdateValue("called", $row1, $msg->param["callnumber"]);
+            $activ_connections->UpdateValue("called_gateway", $row1, $msg->param["gateway"]);
+            $activ_connections->UpdateValue("called_type", $row1, $msg->param["direction"]);
+            if ( $msg->param["operation"] == "initialize") {
+                $activ_connections->UpdateValue("billid", $row1, $msg->param["billid"]);
+                $activ_connections->UpdateValue("callbillid", $row1, $msg->param["callbillid"]);
+            }
+            //$log->debug("Update called:".implode("','", $row1));
+            //$activ_connections->LogTable();
+        }
+        
+    }
+
+    //2. From FORK (called find)    
+    $no_called = $activ_connections->SearchRowWithValue("called");
+    if (!empty($no_called)) {
+        $peer = $activ_connections->GetValue("peerid",$no_called["row"]);
+        //$log->debug("No called NUMBER:'".implode("','", $no_called["row"]));//."':|:".implode("','", $peer["peerid"]));
+        //if (!empty($peer)) {
+            //$activ_connections->LogTable();
+            //$msg->LogMsg();                
+            foreach ($peer["peerid"] as $row_num=>$value) {
+              $peeer_row_number = $no_called["row"][$row_num];
+              //$log->debug("Peer[".$peeer_row_number."]:".$value);
+              if (chektype($value) == "fork") {
+                $chan = $activ_connections->getCellValueFromKey("chan",$peeer_row_number);
+                $called_chan_find = $activ_channels->SearchRowWithValue("chan",$chan);                
+                if (!empty($called_chan_find)) {
+                    $called_chan_row = $called_chan_find["row"][0];                    
+                    $caller = $activ_channels->getCellValueFromKey("caller",$called_chan_row);
+                    //$log->debug("Caller to ".$chan." is:".$caller."|".chektype($value));                   
+                                                            
+                    $caller_info1 = $activ_channels->SearchRowWithValue("callnumber",$caller);
+                    if (!empty($caller_info1)) {
+                        $caller_info = $activ_channels->SearchRowWithValue("ended",0,$caller_info1["row"]);
+                        if (!empty($caller_info)) {
+                             //$log->debug("Update [".$peeer_row_number."]:".$activ_connections->getCellValueFromKey("caller", $peeer_row_number)."|".$caller);
+                             //reverse caller - called
+                             /*$activ_connections->UpdateValue("called", [$peeer_row_number], $activ_connections->getCellValueFromKey("caller", $peeer_row_number) );
+                             $activ_connections->UpdateValue("called_gateway", [$peeer_row_number], $activ_connections->getCellValueFromKey("caller_gateway", $peeer_row_number) );
+                             $activ_connections->UpdateValue("called_type", [$peeer_row_number], $activ_connections->getCellValueFromKey("caller_type",$peeer_row_number) );
+
+                             $activ_connections->UpdateValue("caller", [$peeer_row_number], $caller);
+                             $activ_connections->UpdateValue("caller_gateway", [$peeer_row_number], $activ_channels->getCellValueFromKey("gateway",$caller_info["row"][0]) );
+                             $activ_connections->UpdateValue("caller_type", [$peeer_row_number], $activ_channels->getCellValueFromKey("direction",$caller_info["row"][0]) );  */
+                             //ver.2
+                             $activ_connections->UpdateValue("called", [$peeer_row_number], $caller);
+                             $activ_connections->UpdateValue("called_gateway", [$peeer_row_number], $activ_channels->getCellValueFromKey("gateway",$caller_info["row"][0]) );
+                             $activ_connections->UpdateValue("called_type", [$peeer_row_number], $activ_channels->getCellValueFromKey("direction",$caller_info["row"][0]) );
+                        }
+                    }
+                }                                
+              } elseif (chektype($value) == "telephony") {
+                  //смысла нет, т.к. инфа только в cdr идет
+              } elseif (chektype($value) == "tone") {
+                   $activ_connections->UpdateValue("called", [$peeer_row_number], "HOLD" );
+              } elseif (chektype($value) == "conf") {
+              } elseif (chektype($value) == "moh") {                   
+                   $hold_from = $activ_connections->getCellValueFromKey("targetid",$peeer_row_number);
+                   $hold_chan = $activ_channels->SearchRowWithValue("chan",$hold_from);
+                   if(!empty($hold_chan)) {
+                       $activ_connections->UpdateValue("called", [$peeer_row_number], "MOH" );
+                       $activ_connections->UpdateValue("called_gateway", [$peeer_row_number], $activ_channels->getCellValueFromKey("callnumber",$hold_chan["row"][0]) );
+                   }                   
+              } elseif (chektype($value) == "auto_attendant") {
+                    //$activ_connections->UpdateValue("called", [$peeer_row_number], "AutoAttendant" );         //приходит от route.php
+              } elseif (chektype($value) == "leavemaildb") {
+                    //$activ_connections->UpdateValue("called", [$peeer_row_number], "VM" );
+                    //$activ_connections->UpdateValue("called_gateway", $peeer_row_number, "???" );            //добавить с кого перевод прошел в 
+              }
+            }
+            //$activ_connections->LogTable();
+        //}
+    }
+}
+
+function CreateChannels($msg) {
+    global $activ_channels;
+    //global $log;
+    
+    if (in_array($msg->param["operation"], ["initialize", "update", "chan.connected", "call.answered", "chan.startup"])) {
+        $res = $activ_channels->SearchRowWithValue("chan",$msg->param["chan"]);        
+        if (!empty($res))  {
+            //$log->debug("Update CDR");            
+            if (in_array($msg->param["operation"],["initialize", "update", "chan.startup"])) {
+                $activ_channels->UpdateFromMessage($res["row"][0],$msg);                
+                //$log->debug("Updated CDR");
+            }
+        } else{
+           $activ_channels->MessageInsert($msg);
+           //$log->debug("Insert CDR");
+        }
+        //$activ_channels->LogTable();
+    }    
+}
+
+function DisconnectChannels($msg) {
+    global $activ_connections;
+    //global $log;
+    
+    if (in_array($msg->param["operation"], ["chan.connected", "chan.disconnected", "call.answered", "chan.hangup"])) {
+        //$activ_connections->LogTable();
+        //$msg->LogMsg();
+        $actv_conct = $activ_connections->SearchRowWithValue("disconnect");
+        if (!empty($actv_conct)) {
+            //$log->debug("Search in:".implode("','", $actv_conct["row"]));            
+            $res = $activ_connections->SearchRowWithValue(["chan","peerid"],[$msg->param["chan"]],$actv_conct["row"]);
+            $res1 = $activ_connections->SearchRowWithValue(["chan","peerid"],[$msg->param["peerid"]],$actv_conct["row"]);
+            $rows1 = empty($res) ? array() : $res["row"];
+            $rows2 = empty($res1) ? array() : $res1["row"];
+            if ($msg->param["operation"] == "chan.hangup") 
+                $rows = $rows1;
+            elseif ($msg->param["operation"] == "chan.disconnected")
+                $rows = array_intersect($rows1, $rows2);
+            else
+                $rows = array_merge(array_diff($rows1, $rows2), array_diff($rows2, $rows1));
+            $activ_connections->UpdateValue("disconnect",$rows,$msg->param["timestamp"]);
+            //$log->debug("Updateed rows[".$msg->param["chan"]."][".$msg->param["peerid"]."]:".implode("','", $rows)."|".implode("','", $rows1)."|".implode("','", $rows2));
+        }
+        //$activ_connections->LogTable();
+    }
+}
+
+function ConnectChannels($msg) {
+    global $activ_connections;
+    global $log;
+
+    if (in_array($msg->param["operation"], ["chan.connected", "call.answered"])) {
+        //$msg->LogMsg();
+        $actv_conct = $activ_connections->SearchRowWithValue("disconnect");
+        if (!empty($actv_conct)) {
+            $res = $activ_connections->SearchRowWithValue(["chan","peer"],[$msg->param["chan"],$msg->param["peerid"]],$actv_conct["row"]);
+            if (!empty($res)) {  
+                $answer_time = $activ_connections->getCellValueFromKey("answer",$res["row"][0]);
+                //$log->debug("UPdate data".$res["row"][0]);              
+                if ($msg->param["operation"] == "call.answered")  {                    
+                    //$log->debug("Answer:".$answer_time);
+                    $activ_connections->UpdateFromMessage($res["row"][0],$msg);
+                    if (!is_null($answer_time))
+                         $activ_connections->UpdateValue("answer",$res["row"][0],$answer_time);
+                } elseif (!is_null($msg->GetValue("answer")) && is_null($answer_time))
+                     $activ_connections->UpdateValue("answer",$res["row"][0],$msg->GetValue("answer"));
+            } else {
+                if (is_null($msg->GetValue("connect")))
+                     $msg->param["connect"] = $msg->param["timestamp"];
+                $activ_connections->MessageInsert($msg);
+            }
+        } else {
+            if (is_null($msg->GetValue("connect")))
+                 $msg->param["connect"] = $msg->param["timestamp"];
+            $activ_connections->MessageInsert($msg);
+        }
+        //$activ_connections->LogTable();         
+    }
+}
+
+function CreateConfRoom(&$msg) {
+    global $conf_room;
+
+    if (($msg->param["operation"] == "chan.connected") and (chektype($msg->param["peerid"]) == "conf"))  {
+        //$msg->LogMsg();
+        $res = $conf_room->SearchRowWithValue("targetid",$msg->param["targetid"]);
+        if(!empty($res))  {
+            $msg->param["called"] = $conf_room->getCellValueFromKey("called",$res["row"][0]);
+            $active_billid = $conf_room->GetValue("callbillid",$res["row"]);
+            if(!empty($active_billid))  {                
+                $call_id = $active_billid["callbillid"];
+                $call_id [] = $msg->GetValue("callbillid");
+                $callbilid = min(array_diff($call_id, array('')));
+                if(!empty($callbilid))
+                    $msg->param["callbillid"] = $callbilid;
+            }
+        } else {
+            $msg->param["called"] = $msg->getValue("caller");         //взять из Acive_chan         //можно отловить создание conf/x
+        }
+        //$conf_room->MessageInsert($msg);                      //Убрал в UPDATE по таблицам<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+        //$conf_room->LogTable();
+    }
+}
+
+function CloseChannesl($msg) {
+    global $activ_channels;
+    //global $log;
+
+    if ($msg->param["operation"] == "finalize") {
+        //$msg->LogMsg();
+        //$activ_channels->LogTable();
+        $res = $activ_channels->SearchRowWithValue("chan",$msg->GetValue("chan"));
+        //$log->debug("Update [".$res["row"][0]."]".$msg->GetValue("chan"));
+        $activ_channels->UpdateFromMessage($res["row"][0],$msg);
+        $activ_channels->UpdateValue("SQL",$res["row"],"delete");
+        //$activ_channels->LogTable();
+    }
+}
+
+/*function searchGateway($chan) {
+    global $active_gates;
+
+    if (is_array($chan)) {
+        $enbl_gtw = $active_gates->SearchRowWithValue("status","online");    
+        if(count($enbl_gtw)) {
+            $res = $active_gates->SearchRowWithValue(["username"],$chan,$enbl_gtw["row"]);
+            if (count($res))
+                 return $active_gates->GetValue("description",$res["row"][0]);
+        }
+    }
+    return NULL;
+}*/
+
+function setGateways(&$msg) {
+    //global $log;
+    global $activ_channels;
+    
+    $ch_caller = $activ_channels->SearchRowWithValue("chan",$msg->param["chan"]);
+    if (!empty($ch_caller)) {        
+         $msg->param["caller"] = $activ_channels->getCellValue($activ_channels->colFind("callnumber"),$ch_caller["row"][0]);
+         $msg->param["caller_gateway"] = $activ_channels->getCellValue($activ_channels->colFind("gateway"),$ch_caller["row"][0]);
+         $msg->param["caller_type"] = $activ_channels->getCellValue($activ_channels->colFind("direction"),$ch_caller["row"][0]);
+    }
+    
+    $ch_called = $activ_channels->SearchRowWithValue("chan",$msg->param["peerid"]);
+    if (!empty($ch_called)) {         
+         $msg->param["called"] = $activ_channels->getCellValue($activ_channels->colFind("callnumber"),$ch_called["row"][0]);
+         $msg->param["called_gateway"] = $activ_channels->getCellValue($activ_channels->colFind("gateway"),$ch_called["row"][0]);
+         $msg->param["called_type"] = $activ_channels->getCellValue($activ_channels->colFind("direction"),$ch_called["row"][0]);
+    }
+    //$log->debug("Chan caller:".$msg->param["chan"]."|".$msg->param["caller"]."|".$msg->param["caller_gateway"]."|".$msg->param["caller_type"]);
+    //$log->debug("Chan called:".$msg->param["peerid"]."|".$msg->param["called"]."|".$msg->param["called_gateway"]."|".$msg->param["called_type"]);
+}
+
+function SetBillid(&$msg) {
+    global $activ_channels;
+
+    $billid = $msg->GetValue("billid");      
+    
+    if (is_null($billid)) {
+        $value = [$msg->GetValue("chan")];
+        if(!is_null($msg->GetValue("peerid")))    
+           $value[] = $msg->GetValue("peerid");
+
+        $bill_res = $activ_channels->SearchRowWithValue("chan",$value);
+        if (!empty($bill_res)) {             
+             $billid = $activ_channels->GetValue("billid", $bill_res["row"]);             
+             $billid = min(array_diff($billid["billid"], array('')));
+             if (!empty($billid)) {
+                  $value[] = $billid;
+                  $msg->param["billid"] = $billid;
+             }
+        }
+    }
+}
+
+function SearchCallBillid(&$msg) {
+    global $activ_connections;
+    global $activ_channels;
+    //global $log;
+
+    $billid = $msg->GetValue("billid");
+    $chan = $msg->GetValue("chan");
+    $peer = $msg->GetValue("peerid");
+    
+    $value = [$chan];
+    if(!is_null($peer))
+       $value[] = $peer;
+    if (!is_null($billid)) 
+         $value[] = $billid;
+    /*if (is_null($billid)) {
+        $bill_res = $activ_channels->SearchRowWithValue("chan",$value);
+        if (!empty($bill_res)) {
+             $log->debug("Result search:".implode("','", $bill_res["row"]));
+             $billid = $activ_channels->GetValue("billid", $bill_res["row"]);
+             $log->debug("Result search:".implode("','", $billid["billid"]));
+             $billid = min(array_diff($billid["billid"], array('')));
+             if (!empty($billid)) {
+                  $value[] = $billid;
+                  $msg->param["billid"] = $billid;
+             }
+        }
+    } else
+        $value[] = $billid;*/
+    
+    //$log->debug("search:".implode("','", $value));
+    //$activ_channels->LogTable();
+    //$activ_connections->LogTable();
+    $res = $activ_channels->SearchRowWithValue(["chan","billid"],$value);    
+    if (!empty($res))  {
+        $cahn_billid = $activ_channels->GetValue("callbillid",$res["row"]);
+        $ch_id = array_diff($cahn_billid["callbillid"], array(''));
+        $ch_billid = count($ch_id) ? min($ch_id) : $billid;
+    }
+
+    $res = $activ_connections->SearchRowWithValue(["chan","peerid","billid"],$value);    
+    if (!empty($res)) {
+         $active_billid = $activ_connections->GetValue("callbillid",$res["row"]);
+         $call_id = array_diff($active_billid["callbillid"], array(''));
+         $callbillid = count($call_id) ? min($call_id) : $billid;
+         if (isset($ch_billid))
+             $callbillid = min(array_diff([$callbillid, $ch_billid, $billid], array('')));
+    } else
+       $callbillid = isset($ch_billid) ? $ch_billid : $billid;
+
+    //return $callbillid;
+    $msg->param["callbillid"] = $callbillid;
+}
+
+/*function chekStatusPeer($msg) {
+    global $activ_channels;
+    //global $log;
+
+    if ($msg->GetValue("status") == "answered")  {
+        $res = $activ_channels->SearchRowWithValue("chan",$msg->GetValue("peerid"));        
+        if (!empty($res))
+            if ($activ_channels->getCellValueFromKey("status",$res["row"][0]) == "answered")  {
+                 $msg->param["answer"] = $msg->param["timestamp"];
+                 $msg->param["connect"] = NULL;                                    //Проверить как повлияет
+            }
+    }
+    
+    //можно слазить в history за подробностями
+    //$log->debug($msg->param["chan"]."=".substr($msg->param["chan"],strrpos($msg->param["chan"],'/')+1));
+    //$log->debug($msg->param["peerid"]."=".substr($msg->param["peerid"],strrpos($msg->param["peerid"],'/')+1));
+    $chan = substr($msg->param["chan"],strrpos($msg->param["chan"],'/')+1);
+    $peer = substr($msg->param["peerid"],strrpos($msg->param["peerid"],'/')+1);
+    if ($chan > $peer) {
+        $msg->param["chan"] = $msg->param["peerid"];
+        $msg->param["peerid"] = $msg->param["id"];
+    }
+}*/
+
 function chektype($type) {
     global $channel_type;
+    //global $log;
+    
+    $count = substr_count($type,'/');
+    if ($count>0)
+        $ch_type = stristr($type,'/',true);
+    else
+        $ch_type = $type;
 
-    $ch_type = stristr($type,'/',true);
-    if(in_array($ch_type,$channel_type) or in_array($type,$channel_type))
+    //$log->debug("Type:".$type." is ".$ch_type);
+    if(in_array($ch_type,$channel_type))
       return "telephony";
     else
       return $ch_type;
 }
 
-function search_disconnect($id,$peerid,$res,&$connected) {
-    $sql = array();
-    foreach ($res as $row) {
-        if (($row["chan"]==$id and $row["peerid"]==$peerid) or ($row["chan"]==$peerid and $row["peerid"]==$id)){
-            $connected ["connect"] = $row["connect"];
-            $connected ["chan"] = $row["chan"];
-        }else
-           $sql[]= '("'.$row["connect"].'","'.$row["chan"].'")';
-    }
-    return implode(',', $sql); 
-}
+function MsgFilling(&$msg) {
+    global $log;
+    global $active_gates;
+    global $activ_channels;
 
-function search_discnct($id,$peerid,$res,&$connected) {
-    $sql = array();
-    foreach ($res as $row) {
-        if ($row["chan"]==$id and $row["peerid"]==$peerid) {
-            $connected ["connect"] = $row["connect"];
-            $connected ["chan"] = $row["chan"];
-        }else
-           $sql[]= '("'.$row["connect"].'","'.$row["chan"].'")';
-    }
-    return implode(',', $sql); 
-}
+    if(is_null($msg->param["id"]))
+       $msg->param["id"] = $msg->param["chan"];       
+    else
+       $msg->param["chan"] = $msg->param["id"];    
 
-function chan_startup() {
-    global $ev;
+    //$msg->LogMsg();
+    switch ($msg->param["operation"]) {
+        case "finalize":
+            //break;
+        case "chan.startup":
+            if(chektype($msg->param["chan"]) == "fork")
+               return false;
+        case "update":
+            //break;
+        case "initialize":            
+            if ( $msg->param["direction"] == 'incoming')  {                
+                 $msg->param["callnumber"] = $msg->param["caller"];
+                 if (isset($msg->param["username"]))
+                      $username = $msg->GetValue("username");
+            } else {
+                 $msg->param["callnumber"] = isset($msg->param["calledfull"]) ? $msg->param["calledfull"] : $msg->param["called"];
+                 $msg->param["called"] = $msg->param["callnumber"];
+                 $username = $msg->GetValue("caller");
+            }    
+            $enbl_gtw = $active_gates->SearchRowWithValue("status","online");    
+            if(!empty($enbl_gtw) && isset($username)) {
+                $res = $active_gates->SearchRowWithValue("username",$username,$enbl_gtw["row"]);
+                if (!empty($res))
+                    $msg->param["gateway"] = $active_gates->GetValue("description",$res["row"][0]);
+            }            
+            //$msg->param["gateway"] = searchGateway([$msg->param["username"],$msg->param["caller"]]);
+            break;
+        case "route.register":
+        case "rec.vm":
+            return false;
+            //break;
 
-    $module_type=chektype($ev->GetValue("module"));    
-
-    if ( $module_type == "telephony") {
-        $start_time = microtime(true);
-        $id = $ev->GetValue("id");
-        if ( $ev->GetValue("direction") == 'incoming') {
-            $callnumber = $ev->GetValue("caller");
-            $called = $ev->GetValue("called");
-        } else {
-            $peerid = $ev->GetValue("peerid");
-            $callnumber = $ev->GetValue("calledfull");
-            $called = $callnumber;            
-        }
+        case "chan.connected":
+            $module_type=chektype($msg->param["chan"]);
+            $peer_type=chektype($msg->param["peerid"]);
+            $target_type=chektype($msg->param["targetid"]);
+            //$log->debug("chan.connected:".$module_type."|".$peer_type);
         
-        $query = "INSERT INTO call_logs (time, chan, address, direction, billid, caller, called, ended, gateway,callid)".
-                 " VALUES (".
-                 $start_time.", '".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
-                 $ev->GetValue("billid")."', '".$ev->GetValue("caller")."', '".$called."', '0', ".
-                 "(SELECT description FROM gateways WHERE status='online' and (username = '".$ev->GetValue("username")."' or ".
-                 "username = '".$ev->GetValue("caller")."') LIMIT 1), '".$ev->GetValue("callid")."')";
-        $res = query_nores($query);
-
-
-        //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-        //Доделать для случая когда connect раньше start (через execute)
-        //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-        /*$query1 = "UPDATE chan_switch SET billid = '".$ev->GetValue("billid")."', status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."' ".
-                  "WHERE ((chan = '".$id."' and peerid = '".$peerid."') or (chan = '".$peerid."' and peerid = '".$id."')) and disconnect IS NULL";
-        $res1 = query_nores($query1);*/
-
-        $query2 = "INSERT INTO chan_start (start, chan, direction, billid, callid, callnumber)".
-             " VALUES (".
-             $start_time.", '".$ev->GetValue("id")."', '".$ev->GetValue("direction")."', '".
-             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$callnumber ."')";
-        $res2 = query_nores($query2);
-    }
-}
-
-function chan_connected() {
-    global $ev;
-
-    $connect_time = microtime(true);
-    $id = $ev->GetValue("id");
-    $type = chektype($id);
-    $peerid = $ev->GetValue("peerid");    
-    $peertype = chektype($peerid);
-    $targetid = '';
-    $connected = array();
-    $answer = 'NULL';
-    $billid = $ev->GetValue("billid");
-    $callbillid = $billid;
-
-    if (($type == "q-out") or ($peertype == "q-out") or ($peertype == "conf") or ($peerid == "ExtModule"))
-         return false;
+            if (($module_type == "q-out") or ($peer_type == "q-out") or ($peer_type == "conf") or ($peer_type == "ExtModule"))
+                 return false;    
         
-    if ($type == "conf" or $type == "tone") {
-        $id = $peerid;
-        $peerid = $ev->GetValue("id");
-        $targetid = $ev->GetValue("address");
-        $answer = $connect_time;
-        if ($type == "conf")
-            $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.called, o.called as called_gateway, ".
-                                          "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, NULL as called_type ".
-                                  "FROM activ_channels i, ".
-                                  "(SELECT called, billid FROM activ_conf_room WHERE targetid = '".$targetid."' ".
-                                  "UNION SELECT callnumber as called, billid FROM activ_channels WHERE chan='".$id."' ".
-                                                   "and NOT EXISTS (SELECT * FROM activ_conf_room WHERE targetid = '".$targetid."')) o ".
-                                  "WHERE i.chan='".$id."'";
-        else 
-            $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, NULL as called, NULL as called_gateway, ".
-                                  "i.billid as billid, i.billid as callbillid, i.direction as caller_type, NULL as called_type ".
-                                  "FROM activ_channels i WHERE  i.chan = '".$id."' ";
-    } elseif ($peertype == "fork") {
-        if (substr_count($peerid,'/') == 2) {
-            $targetid = substr(strrchr($peerid,'/'),1);
-            $peerid = substr($peerid,0,strrpos($peerid,'/'));
-            $sql_activ_channels = "SELECT p.caller as caller, i.gateway as caller_gateway, p.called as called, o.gateway as called_gateway, ".
-                                  "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, o.direction as called_type ".
-                                  "FROM activ_channels p, activ_channels i, activ_channels o WHERE  p.chan = '".$id."' and i.callnumber = p.caller and o.callnumber = p.called";            
-        } else {
-            return false;             //не писать инициатора вызова fork/
-        }
-    } elseif ($peertype == "moh") {
-        $targetid = $ev->GetValue("lastpeerid");
-        $answer = $connect_time;
-        $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, 'MoH' as called, o.callnumber as called_gateway, ".
-                              "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, NULL as called_type ".
-                              "FROM activ_channels i, activ_channels o WHERE  i.chan = '".$id."'  and o.chan = '".$targetid."' ";
-    } elseif ($peertype == "q-in")  {
-        if ($ev->GetValue("status") == "answered") {
-            $answer = $connect_time;
-            $targetid = $ev->GetValue("targetid");
-            if(chektype($targetid) == "q-in"){
-                $peerid = $targetid;
-                $targetid = $ev->GetValue("lastpeerid");
+            $msg->param["connect"] = $msg->param["timestamp"];
+            if ($module_type == "conf" or $module_type == "tone") {
+                $msg->param["chan"] = $msg->param["peerid"];
+                $msg->param["peerid"] = $msg->param["id"];
+                $msg->param["targetid"] = $msg->param["address"];        
+                $msg->param["answer"] = $msg->param["timestamp"];                
+            } elseif ($peer_type == "fork") {
+                if (substr_count($msg->param["peerid"],'/') == 2) {
+                    //$msg->param["targetid"] = substr(strrchr($msg->param["peerid"],'/'),1);
+                    //$msg->param["peerid"] = substr($msg->param["peerid"],0,strrpos($msg->param["peerid"],'/'));
+                    $msg->param["targetid"] = substr($msg->param["peerid"],0,strrpos($msg->param["peerid"],'/'));
+                } else
+                    return false;             //не писать инициатора вызова fork/
+            } elseif ($peer_type == "moh") {
+                $msg->param["targetid"] = $msg->param["lastpeerid"];
+                $msg->param["answer"] = $msg->param["timestamp"];                
+            } elseif ($peer_type == "q-in")  {
+                $msg->param["answer"] = $msg->param["timestamp"];               // можно убрать
+                if($target_type == "q-in")
+                    $msg->param["peerid"] = $msg->param["lastpeerid"];                
+            } elseif ($peer_type == "telephony")  {
+                //chekStatusPeer($msg);
+                if ($msg->GetValue("status") == "answered")  {
+                    $res = $activ_channels->SearchRowWithValue("chan",$msg->GetValue("peerid"));        
+                    if (!empty($res))
+                        if ($activ_channels->getCellValueFromKey("status",$res["row"][0]) == "answered")  {                 //можно проверить по ключу "answer">0 для обоих кналов
+                             $msg->param["answer"] = $msg->param["timestamp"];
+                             $msg->param["connect"] = NULL;                                    //Проверить как повлияет
+                        }
+                }                
+                //можно слазить в history за подробностями
+                $chan = substr($msg->param["chan"],strrpos($msg->param["chan"],'/')+1);
+                $peer = substr($msg->param["peerid"],strrpos($msg->param["peerid"],'/')+1);
+                if ($chan > $peer) {
+                    $msg->param["chan"] = $msg->param["peerid"];
+                    $msg->param["peerid"] = $msg->param["id"];
+                }
             }
-        }
-
-        if (chektype($targetid) == "telephony") {
-            $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.called as called, p.callnumber as called_gateway, ".
-                                  "i.billid as billid, IF(i.billid<o.billid or o.billid='',i.billid,o.billid) as callbillid, i.direction as caller_type, NULL as called_type ".
-                                  "FROM activ_channels i, ".
-                                  "(SELECT called, billid FROM call_group_history WHERE chan='".$id."' ORDER BY time DESC LIMIT 1) o, ".
-                                  "(SELECT IF(direction='incoming',caller,called) as callnumber FROM call_logs WHERE chan='".$targetid."' and billid='".$billid."') p  ".
-                                  "WHERE  i.chan = '".$id."'";
-        } else {
-            $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.called as called, NULL as called_gateway, ".
-                              "i.billid as billid, IF(i.billid<o.billid or o.billid='',i.billid,o.billid) as callbillid, i.direction as caller_type, NULL as called_type ".
-                              "FROM activ_channels i, ".
-                              "(SELECT called, billid FROM call_group_history WHERE chan='".$id."' ORDER BY time DESC LIMIT 1) o ".                              
-                              "WHERE  i.chan = '".$id."'";
-        }
-    }
-
-    if ($type == $peertype) {
-        $select_type = "(chan = '".$id."' or peerid = '".$peerid."' or chan = '".$peerid."' or peerid = '".$id."')";
-        $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.callnumber as called, o.gateway as called_gateway, ".
-                              "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, o.direction as called_type  ".
-                              "FROM activ_channels i, activ_channels o WHERE  i.chan = '".$id."' and o.chan = '".$peerid."' ";
-    } else {
-        $select_type = "(chan = '".$id."' or peerid = '".$id."')";
-    }
-      
-
-    $query = "SELECT connect, chan, peerid, billid  FROM chan_switch WHERE ".$select_type." and  disconnect is NULL";
-    $res = query_to_array($query);
-
-    if (!empty($res)) {       
-        $callbillid = min($res["billid"]);                                // проверить и переделать!!! на callbillid
-        if ($type == $peertype) {
-            $disc_sql = search_disconnect($id,$peerid,$res,$connected);
-            $answer = $connect_time;
-        } else
-            $disc_sql = search_discnct($id,$peerid,$res,$connected);
-        if ($disc_sql != '' ) {
-            $query1 = "INSERT INTO chan_switch (connect, chan) VALUES ".$disc_sql." ON DUPLICATE KEY UPDATE disconnect = ".$connect_time;
-            $res1 = query_nores($query1);
-        }
+            $msg->param["id"] = $msg->param["chan"];
+            setGateways($msg);
+            break;
+        case "call.answered":
+            $msg->param["chan"] = is_null($msg->param["peerid"]) ? $msg->param["targetid"] : $msg->param["peerid"];    
+            $msg->param["peerid"] = $msg->param["id"];            
+            $module_type = chektype($msg->param["chan"]);
+            $peer_type = chektype($msg->param["peerid"]);    
+        
+            if (($module_type == "q-out") or ($peer_type == "fork"))
+                 return false;
+        
+            $msg->param["answer"] = $msg->param["timestamp"];
+            //$msg->param["connect"] = $msg->param["timestamp"];            
+            if (($peer_type ==  "auto_attendant") or ($peer_type ==  "leavemaildb"))
+                 $msg->param["targetid"] = "ExtModule";
+            
+            $msg->param["id"] = $msg->param["chan"];
+            setGateways($msg);
+            break;
+        case "chan.disconnected":
+            $module_type = chektype($msg->param["chan"]);    
+            if ($module_type == "q-out" or $module_type == "fork") 
+                  return false;
+            if ($module_type == "telephony")
+                 $msg->param["peerid"] = $msg->param["lastpeerid"]; 
+            else {
+                $msg->param["peerid"] = $msg->param["chan"]; 
+                $msg->param["chan"] = $msg->param["lastpeerid"];
+                $msg->param["id"] = $msg->param["chan"];
+            }               
+            $msg->param["disconnect"] = $msg->param["timestamp"]; 
+            break;
+        case "chan.hangup":
+            $module_type = chektype($msg->param["chan"]);    
+            if (($module_type == "fork") or ($module_type == "q-out"))
+                return false;
+            $msg->param["disconnect"] = $msg->param["timestamp"];
+            break;            
+        default:
+           return false;
     }
     
-    //где-то добавить проверку на answerd!!!!
-    if (empty($connected)) {
-        /*$query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, status, reason)".
-                  " VALUES (".
-                  $connect_time.", ".$answer.", '".$id."', '".$peerid."', '".$targetid."', '".
-                  $ev->GetValue("billid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";*/
-        $query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, callbillid, caller, caller_gateway, ".
-                  "called, called_gateway, caller_type, called_type, status, reason) ".
-                  "SELECT ".
-                  $connect_time.", ".$answer.", '".$id."', '".$peerid."', '".$targetid."', IF('".$billid."'='', t.billid, '".$billid."'), ".
-                  "IF(('".$callbillid."'='' or t.callbillid<'".$callbillid."'), t.callbillid,'".$callbillid."'), t.caller, t.caller_gateway, t.called, t.called_gateway, ".
-                  "t.caller_type, t.called_type,'".$ev->GetValue("status")."', '".$ev->GetValue("reason")."' ".
-                  "FROM ( $sql_activ_channels ) t";
-        $res2 = query_nores($query2);
-    }
-
-    /*$query1 = "UPDATE chan_switch SET disconnect = ".$connect_time." WHERE chan = '".$id."' and disconnect IS NULL"; // and connect != ".$connect_time;
-    $res1 = query_nores($query1);
-
-    $query = "INSERT INTO chan_switch (connect, chan, peerid, targetid, lastpeerid, address, direction, billid, callid,  status, reason)".
-                             " VALUES (".
-                             $connect_time.", '".$id."', '".$ev->GetValue("peerid")."', '".$targetid."', '".
-                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
-                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
-    $res = query_nores($query);*/
-    /*$query1 = "BEGIN; ".
-              "INSERT INTO chan_switch (connect, chan, peerid) ".
-              "VALUES (".$connect_time.", 'fip/21', 'tree'); ".
-              "INSERT INTO chan_switch (connect, chan, peerid) ".
-              "VALUES (".$connect_time.", 'fip/22', 'tree'); ".
-              "COMMIT;";
-    $res1 = query_nores($query1);*/
-
-}  
-
-function chan_disconnected() {
-    global $ev;
+    $msg->param["ended"] = ($msg->param["operation"] == "finalize") ? 1 : 0 ;    
+    $msg->param["connect_type"] =isset($msg->param["connect_type"]) ? $msg->param["connect_type"] : chektype($msg->GetValue("peerid"));
+    //$log->debug($msg->GetValue("peerid")."|".chektype($msg->GetValue("peerid"))."|".$msg->param["connect_type"]);
+    //$msg->param["callbillid"] = SearchCallBillid($msg);
+    SetBillid($msg);
+    //$msg->LogMsg();
+    SearchCallBillid($msg);
+    //$msg->LogMsg();
     
-    $id = $ev->GetValue("id");
-    $type = chektype($id);
-    $peerid = $ev->GetValue("lastpeerid");
-
-    if ($type == "q-out")
-         return false;
-
-    $query = "UPDATE chan_switch SET disconnect = ".microtime(true).", status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."' ".
-             "WHERE ((chan = '".$id."' and peerid = '".$peerid."') or (chan = '".$peerid."' and peerid = '".$id."')) and disconnect IS NULL";
-    $res = query_nores($query);
+    return true;    
 }
 
-function chan_hangup() {
-    global $ev;
+function MsgToHistory($msg) {
+    global $call_history;
+    global $activ_connections;
+    global $log;
 
-    $id = $ev->GetValue("id");
-    $type = chektype($id);
+    $dt = 0.0001;
 
-    if (($type == "fork") or ($type == "q-out")) {
-         return false;
-    } elseif ( $type == "auto_attendant") {
-        $query1 = "UPDATE chan_switch SET disconnect = ".microtime(true).",  status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."' ".
-                  "WHERE targetid = '".$id."' and disconnect IS NULL";
-    } else {
-        $query1 = "UPDATE chan_switch SET disconnect = ".microtime(true).",  status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."' ".
-                   "WHERE (chan = '".$id."' or peerid = '".$id."') and disconnect IS NULL";
+    //добавить полную запись маршрута из register.php
+    if ($msg->GetValue("operation") == "route.register") {
+        $dynamic_parametrs= explode(";",$msg->GetValue("dynamic_parametrs"));
+        SearchCallBillid($msg);                                                          //В route добавить поиск peer callbilid если это pickup /transfer/ next
+        $history_msg = new YMessage("history");
+        $history_msg->CopyDataFromMsg($msg);        
+        $history_msg->UpdateValue("ended",1);
+        $time = $msg->GetValue("connect");
+        foreach ($dynamic_parametrs as $parametr) {
+            $indx = 0;            
+            $data_keys = explode(";",$msg->GetValue($parametr));
+            while (!is_null($msg->GetValue($parametr.".".$indx))) {
+                $data = explode("|",$msg->GetValue($parametr.".".$indx));
+                foreach ($data_keys as $row=>$key)
+                    $history_msg->UpdateValue($key,$data[$row]);
+                if ($history_msg->GetValue("connect_type") == "next")
+                    $history_msg->UpdateValue("connect",NULL);                  //придумать как исправлять  на Route
+                else 
+                    $history_msg->UpdateValue("connect",$time);
+                $time+=$dt;
+                $indx++;
+                $call_history->MessageInsert($history_msg);
+                //$history_msg->LogMsg();
+            }            
+        }
+        //$call_history->LogTable();
+        //$msg->convertMessageType("history");
+        //$msg->UpdateValue("connect_type","route");
+        //$msg->UpdateValue("ended",1);        
+        //SearchCallBillid($msg);                 //В route добавить поиск peer callbilid если это pickup /transfer/ next
+        //$msg->LogMsg();
+        //$call_history->MessageInsert($msg);
+        //$call_history->LogTable();
     }
-    $res1 = query_nores($query1);
 
-    if ( $ev->GetValue("module") == 'sip') {
-           $query = "UPDATE chan_start SET hangup = ".microtime(true)." WHERE chan = '".$ev->GetValue("id")."' and hangup is NULL";
-           $res = query_nores($query);
-    }
+    //запись на автоответчике
+    //добавить проверку на отправку
+    if ($msg->GetValue("operation") == "rec.vm") {
+        $msg->LogMsg();
+        $activ_connections->LogTable();
+        //$call_history->LogTable();
+        $ac_row = $activ_connections->SearchRowWithValue("peerid",$msg->GetValue("peerid"));
+        //$log->debug("Res_search(".$msg->GetValue("peerid")."):".$ac_row["row"][0]);        
+        if (!empty($ac_row))  {
+            $connect_time = $activ_connections->getCellValueFromKey("connect",$ac_row["row"][0]);
+            $log->debug("Time is ".$connect_time);        
+            $history_rows = $call_history->SearchRowWithValue("connect",$connect_time);
+            $call_history->UpdateFromMessage($history_rows["row"][0],$msg);
+            //$call_history->LogTable();
+        }
+    }        
 }
 
-function call_answered() {
-    global $ev;
 
-    $connect_time = microtime(true);
-    $id = $ev->GetValue("peerid");
-    if (!isset($id)) {
-        $id = $ev->GetValue("targetid");
-    }    
-    $type = chektype($id);    
-    $peerid = $ev->GetValue("id");    
-    $peertype = chektype($peerid);
-    $targetid = '';
-    $connected = array();
-    $billid = $ev->GetValue("billid");
-    $callbillid = $billid;
+function CheckMsgType ($type) {
+    global $msg_keys;
+    //$msg_keys["type"]["base_type"] = ["cdr","connect","full","history"];
+    //$msg_keys["type"]["cdr"] = ["call.cdr","chan.startup"];
+    //$msg_keys["type"]["connect"] = ["chan.connected","chan.disconnected","call.answered","chan.hangup"];
+    
+    foreach ($msg_keys["type"] as $name=>$keys)        
+       if (array_search($type,$keys) !== FALSE)
+           return ($name == "base_type") ? $type : $name;
+    return FALSE;
+}
 
-    if (($type == "q-out") or ($peertype == "fork"))
-         return false;
+function MsgHandler($evnt) {
+    global $log;
+    global $activ_channels;
+    global $activ_connections;
+    global $call_history;
     
-    if (($peertype ==  "auto_attendant") or ($peertype ==  "leavemaildb")) {
-        //$id = $ev->GetValue("targetid");        
-        $targetid = $peerid;
-        $peerid = "ExtModule";
-        $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, '".$peertype."' as called, NULL as called_gateway, ".
-                              "i.billid as billid, i.billid as callbillid, i.direction as caller_type, NULL as called_type  ".
-                              "FROM activ_channels i WHERE  i.chan = '".$id."' ";
-    } else {
-        $sql_activ_channels = "SELECT i.callnumber as caller, i.gateway as caller_gateway, o.callnumber as called, o.gateway as called_gateway, ".
-                              "i.billid as billid, IF(i.billid<o.billid,i.billid,o.billid) as callbillid, i.direction as caller_type, o.direction as called_type  ".
-                              "FROM activ_channels i, activ_channels o WHERE  i.chan = '".$id."' and o.chan = '".$peerid."' ";
+    //$log->debug(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>New>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+    $type = CheckMsgType($evnt->name);
+    if (!$type)
+        return false;        
+    $msg = new YMessage($type);
+    $msg->ReadMsg($evnt);
+    //$msg->LogMsg();                                //>>INput
 
-    }
-     
+    MsgToHistory($msg);                                  //Запись register.route >> нужно утащить наружу - не прогонять полностью через обработчик??? (событие - пропущенный вызов???)
     
-       
-    $query = "SELECT connect, chan, peerid FROM chan_switch WHERE (chan = '".$id."' or peerid = '".$peerid."' or chan = '".$peerid."' or peerid = '".$id."') and  disconnect is NULL";
-    $res = query_to_array($query);
+    $msg->convertMessageType("full");
+
+    $filling = MsgFilling($msg);
+    if (!$filling)
+        return false;    
+    $msg->LogMsg();                            //>>INPut_Converted
+    //$log->debug(">>>>>");
+
+    //
+    //>function>>UpadateDataFromMsg($msg);
+    CreateConfRoom($msg);
+    CreateChannels($msg);    
+    DisconnectChannels($msg);
+    ConnectChannels($msg);
+    CloseChannesl($msg);
+    //$activ_connections->LogTable();
+    //$activ_channels->LogTable();
+    //$call_history->LogTable();
+
+    //
+    //>function>>UpdateData($msg);
+    UpdateConnection($msg);                         // базовая операция    
     
-    if (!empty($res)) {       
-        if ($type == $peertype) 
-             $disc_sql = search_disconnect($id,$peerid,$res,$connected);
+    //$activ_channels->LogTable();    
+    //$activ_connections->LogTable();
+    //$log->debug(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");    
+    
+    //Update вспомогательных данных
+    UpdateConfQueue($msg);
+    UpdateHistory($msg);
+    
+    //$activ_connections->LogTable();
+    //$activ_channels->LogTable();
+    //$call_history->LogTable();
+
+    //External sniffers
+    closePhpScripts($msg);                                      //Костыли к Yate
+    RegisterInfo($msg);
+    
+    $activ_connections->DataToMySQL();
+    $activ_channels->DataToMySQL();
+    $call_history->DataToMySQL();
+
+    ClearActiveTable($msg);
+
+    return true;
+}
+
+//утащить в общий обработчик событий с апдейтом базы и т.п.
+function GatewaysStatusUpdate($event,$status = "update") {
+    global $active_gates;
+    
+    //$active_gates->LogTable();
+    $gate = $active_gates->SearchRowWithValue("gateway",$event->GetValue("account"));
+    if ($status == "info") {
+        $msg = new YMessage("gateways");
+        $msg->ReadMsg($event);
+        $msg->param["gateway"] = $event->GetValue("account");
+        //$msg->LogMsg();
+        if(empty($gate)) 
+            $active_gates->MessageInsert($msg);
         else
-            $disc_sql = search_discnct($id,$peerid,$res,$connected);
-        if ($disc_sql != '' ) {
-              $query1 = "INSERT INTO chan_switch (connect, chan) VALUES ".$disc_sql." ON DUPLICATE KEY UPDATE disconnect = ".$connect_time;
-              $res1 = query_nores($query1);
+            $active_gates->UpdateFromMessage($gate["row"][0],$msg);
+    } else {
+        if(!empty($gate)) {
+           $status = ($event->GetValue("registered") == 'false') ? "offline" : "online";
+           $active_gates->UpdateValue("status",$gate["row"][0],$status);
         }
     }
-
-    if (empty($connected)) {
-        /*$query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, status, reason)".
-                  " VALUES (".
-                  $connect_time.", ".$connect_time.", '".$id."', '".$peerid."', '".$targetid."', '".
-                  $ev->GetValue("billid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";*/
-        $query2 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, billid, callbillid, caller, caller_gateway, ".
-                  "called, called_gateway, caller_type, called_type, status, reason) ".
-                  "SELECT ".
-                  $connect_time.", ".$connect_time.", '".$id."', '".$peerid."', '".$targetid."', IF('".$billid."'='', t.billid, '".$billid."'), ".
-                  "IF('".$callbillid."'='' or t.callbillid<'".$callbillid."', t.callbillid,'".$callbillid."'), t.caller, t.caller_gateway, t.called, t.called_gateway, ".
-                  "t.caller_type, t.called_type,'".$ev->GetValue("status")."', '".$ev->GetValue("reason")."' ".
-                  "FROM ( $sql_activ_channels ) t";
-    } else {
-        $query2 = "UPDATE chan_switch SET answer = ".$connect_time.",  status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."', ".
-                  "chan = '".$id."', peerid = '".$peerid."'  ".
-                  "WHERE chan = '".$connected["chan"]."' and connect = ".$connected["connect"];
-    }
-    $res2 = query_nores($query2);
-    /*$query = "SELECT connect,chan FROM chan_switch WHERE ((chan = '".$id."' and peerid = '".$peerid."') or (chan = '".$peerid."' and peerid = '".$id."')) and  disconnect is NULL";
-    $res = query_to_array($query);
-
-    if (empty($res)) {
-        $query1 = "INSERT INTO chan_switch (connect, answer, chan, peerid, targetid, status, reason)".
-                  " VALUES (".
-                  microtime(true)."', ".microtime(true).", '".$id.", '".$peerid."', '".$targetid."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";    
-    } else {
-        $query1 = "UPDATE chan_switch SET answer = ".microtime(true).",  status = '".$ev->GetValue("status")."', reason = '".$ev->GetValue("reason")."', ".
-                  "chan = '".$id."', peerid = '".$peerid."'  ".
-                  "WHERE chan = '".$res[0]["chan"]."' and connect = ".$res[0]["connect"];
-    }
-                
-    $res1 = query_nores($query1);*/
+    //$active_gates->LogTable();
 }
-
-
 
 // Always the first action to do 
 Yate::Init();
@@ -410,12 +1739,14 @@ Yate::Install("user.register");
 Yate::Install("user.unregister");
 Yate::Install("user.auth");
 Yate::Install("call.cdr");
+Yate::Install("chan.startup", 80);
 
 Yate::Install("chan.hangup",80);
 Yate::Install("chan.connected", 80);
 Yate::Install("chan.disconnected", 80);
 Yate::Install("call.answered", 80);
-Yate::Install("chan.startup", 80);
+Yate::Install("route.register");
+Yate::Install("rec.vm");
 
 Yate::Install("user.notify");
 Yate::Install("engine.status");
@@ -424,6 +1755,13 @@ Yate::Install("engine.debug");
 
 // Ask to be restarted if dying unexpectedly 
 Yate::SetLocal("restart", "true");
+
+$activ_channels = new ActivObjects("cdr");
+$activ_connections = new ActivObjects("connect");
+$active_gates = new ActivObjects("gateways");                           //!!!!!!!не читать все данные!!!!
+$conf_room = new ActivObjects("activ_conf_room");
+$active_queue = new ActivObjects("queue");
+$call_history = new ActivObjects("history");
 
 $query = "SELECT enabled, protocol, username, description, 'interval', formats, authname, password, server, domain, outbound , localaddress, modified, gateway as account, gateway_id, status, 1 AS gw, ip_transport FROM gateways WHERE enabled = 1 AND gateway IS NOT NULL AND username IS NOT NULL ORDER BY gateway";
 $res = query_to_array($query);
@@ -493,6 +1831,7 @@ for (;;) {
                     $gateway = $ev->GetValue("account") . '(' . $ev->GetValue("protocol") . ')';
                     $status = ($ev->GetValue("registered") != 'false') ? "online" : "offline";
                     $s_statusaccounts[$gateway] = $status;
+                    GatewaysStatusUpdate($ev);
                     $query = "UPDATE gateways SET status='$status' WHERE gateway='" . $ev->GetValue("account") . "'";
                     $res = query_nores($query);
                     break;
@@ -528,147 +1867,12 @@ for (;;) {
                     $res = query_nores($query);
                     $ev->handled = true;
                     break;
-                    case "chan.hangup":
-                    if ($ev->GetValue("lastpeerid") == "ExtModule") {
-                        $billid = $ev->GetValue("billid");
-                        $query = "SELECT  chan FROM call_logs WHERE billid='$billid' AND direction='outgoing' AND ended=0";
-                        $res = query_to_array($query);
-                        if(count($res)) {
-                            $m = new Yate("chan.hangup");
-                            $m->params["id"] = $res[0]["chan"];
-                            $m->params["billid"] = $billid;
-                            $m->params["targetid"] = $ev->GetValue("id");
-                            //$m->params["reason"] = 'hangup';
-                            $m->params["answered"] = 'true';                            
-                            $m->Dispatch();
-                        }
-                        /*$targetid = $ev->GetValue("targetid");
-                        $billid = $ev->GetValue("billid");
-                        if ( substr($targetid,0,4) == "fork" ) {
-                            $query = "SELECT  chan FROM call_logs WHERE billid='$billid' AND direction='outgoing' AND ended=0";
-                            $res = query_to_array($query);
-                            $targetid = $res[0]["chan"];
-                        }
-                        $m = new Yate("chan.hangup");
-                        $m->params["id"] = $targetid;
-                        $m->params["billid"] = $billid;
-                        $m->params["targetid"] = $ev->GetValue("id");
-                        $m->params["reason"] = 'hangup';
-                        $m->params["answered"] = 'true';                        
-                        $m->Dispatch();*/
-                        //вариант 2
-                        //$query = "UPDATE call_logs a1 SET a1.duration=($time-a1.time), a1.billtime=a1.duration, ended=1 WHERE billid='" . $ev->GetValue("billid").  "' AND chan='" .$ev->GetValue("targetid"). "' AND ended=0";
-                        //$res = query_to_array($query);                        
-                    }
-                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
-                             " VALUES (".
-                             microtime(true).", 'hangup','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
-                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
-                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
-                    $res1 = query_nores($query1);
-
-                    chan_hangup();
-
+                default:
+                    //$log->debug("Event:".$ev->name);
+                    if (!MsgHandler($ev))
+                        $log->debug("[".$ev->name."] Skip Events!!!");
                     break;
-                case "call.answered":
-                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
-                             " VALUES (".
-                             microtime(true).", 'answered','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
-                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
-                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
-                    $res1 = query_nores($query1);
-                    
-                    call_answered();
-
-                    break;
-                case "chan.startup":
-                    chan_startup();
-                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, caller, called, calledfull, lastpeerid, status, reason)".
-                             " VALUES (".
-                             microtime(true).", 'startup','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
-                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
-                             $ev->GetValue("caller")."', '".$ev->GetValue("called")."', '".$ev->GetValue("calledfull")."', '".$ev->GetValue("lastpeerid")."', '".
-                             $ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
-                    $res1 = query_nores($query1);
-                    
-                    
-                    
-                    break;
-                case "chan.connected":
-                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
-                             " VALUES (".
-                             microtime(true).", 'connected','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
-                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
-                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
-                    $res1 = query_nores($query1);
-
-                    chan_connected();
-
-                    break;
-                case "chan.disconnected":
-                    $query1 = "INSERT INTO chan_switch1 (time, type, chan, address, direction, billid, callid, peerid, targetid, lastpeerid, status, reason)".
-                             " VALUES (".
-                             microtime(true).", 'disconnected','".$ev->GetValue("id")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
-                             $ev->GetValue("billid")."', '".$ev->GetValue("callid")."', '".$ev->GetValue("peerid")."', '".$ev->GetValue("targetid")."', '".
-                             $ev->GetValue("lastpeerid")."', '".$ev->GetValue("status")."', '".$ev->GetValue("reason")."')";
-                    $res1 = query_nores($query1);
-                    /*if ($ev->GetValue("lastpeerid") == "ExtModule") {
-                        $targetid = $ev->GetValue("targetid");
-                        $query = "SELECT  chan FROM call_logs WHERE billid='$billid' AND direction='outgoing' AND ended=0";
-                        $res = query_to_array($query);
-                        if(count($res)) {
-                            $m = new Yate("chan.hangup");
-                            $m->params["id"] = $res[0]["chan"];
-                            $m->params["billid"] = $billid;
-                            $m->params["targetid"] = $ev->GetValue("id");
-                            $m->params["reason"] = 'hangup';
-                            $m->params["answered"] = 'true';                        
-                            $m->Dispatch();
-                        }
-                    }*/
-
-                    chan_disconnected();
-
-                    break;
-                case "call.cdr":
-                 $operation = $ev->GetValue("operation");
-				 $reason = $ev->GetValue("reason");
-                 if(empty($ev->GetValue("calledfull")))                      
-                     $called = $ev->GetValue("called");
-                 else
-                     $called = $ev->GetValue("calledfull");
-                  switch($operation) {
-					case "initialize":
-                       /* $query = "INSERT INTO call_logs (time, chan, address, direction, billid, caller, called, duration, billtime, ringtime, status, reason, ended, gateway,callid)".
-                                    " VALUES (".
-                                    $ev->GetValue("time").", '".$ev->GetValue("chan")."', '".$ev->GetValue("address")."', '".$ev->GetValue("direction")."', '".
-                                    $ev->GetValue("billid")."', '".$ev->GetValue("caller")."', '".$called."', ".$ev->GetValue("duration").", ".
-                                    $ev->GetValue("billtime").", ".$ev->GetValue("ringtime").", '".$ev->GetValue("status")."', '$reason', '0', ".
-                                    "(SELECT description FROM gateways WHERE status='online' and (username = '".$ev->GetValue("username")."' or ".
-                                    "username = '".$ev->GetValue("caller")."') LIMIT 1), '".$ev->GetValue("callid")."')";*/
-                        $query = "UPDATE call_logs SET address='".$ev->GetValue("address")."', direction='".$ev->GetValue("direction")."', time=" . $ev->GetValue("time").
-                                    ", caller='".$ev->GetValue("caller")."', called='".$called."', duration=" . $ev->GetValue("duration"). 
-                                    ", billtime=".$ev->GetValue("billtime").", ringtime=".$ev->GetValue("ringtime").", status='".$ev->GetValue("status").
-                                    "', reason='$reason', callid='".$ev->GetValue("callid")."' WHERE chan='" . $ev->GetValue("chan") . "' AND billid='".$ev->GetValue("billid")."' ";
-                        $res = query_nores($query);
-						break;
-					case "update":
-						$query = "UPDATE call_logs SET address='".$ev->GetValue("address")."', direction='".$ev->GetValue("direction")."', billid='".$ev->GetValue("billid").
-                                        "', caller='".$ev->GetValue("caller")."', called='".$called."', duration=" . $ev->GetValue("duration"). 
-                                        ", billtime=".$ev->GetValue("billtime").", ringtime=".$ev->GetValue("ringtime").", status='".$ev->GetValue("status").
-                                        "', reason='$reason', callid='".$ev->GetValue("callid")."' WHERE chan='" . $ev->GetValue("chan") . "' AND time=" . $ev->GetValue("time");
-						$res = query_nores($query);
-                        break;
-					case "finalize":
-						$query = "UPDATE call_logs SET address='" . $ev->GetValue("address") ."', direction='".$ev->GetValue("direction"). "', billid='" . $ev->GetValue("billid") .
-                                    "', caller='" . $ev->GetValue("caller") . "', called='" . $called . "', duration= IF(" . $ev->GetValue("duration") . ">1E6,0," . 
-                                    $ev->GetValue("duration") . "), billtime=" . $ev->GetValue("billtime") . ", ringtime=" . $ev->GetValue("ringtime") . ", status='" . $ev->GetValue("status") . 
-                                    "', reason=IF('$reason'='',reason,'$reason'), ended=1 WHERE chan='" .  $ev->GetValue("chan") . "' AND time=" . $ev->GetValue("time");
-                        $res = query_nores($query);
-						break;
 				}
-				break;                    
-            }
             // This is extremely important.
             //  We MUST let messages return, handled or not
             if ($ev)
@@ -681,13 +1885,20 @@ for (;;) {
                     if ($time < $next_time)
                         break;
                     $next_time = $time + $time_step;
-                    //проверка шлюза на изменеие параметров
-                    $query = "SELECT enabled, protocol, username, description, 'interval', formats, authname, password, server, domain, outbound , localaddress, modified, gateway as account, gateway_id, status, 1 AS gw FROM gateways WHERE enabled = 1 AND modified = 1 AND username is NOT NULL";
+                    //проверка шлюза на изменеие параметров в интерфейсе
+                    $query = "SELECT enabled, protocol, username, description, 'interval', formats, authname, password, server, domain, outbound , localaddress, modified, gateway as account, gateway_id, status, 1 AS gw FROM gateways WHERE modified = 1 AND username is NOT NULL";
                     $res = query_to_array($query);
                     for ($i = 0; $i < count($res); $i++) {
                         $m = new Yate("user.login");
                         $m->params = $res[$i];
+                        if (!$res[$i]["enabled"])
+                             $m->params["operation"] = "logout";
                         $m->Dispatch();
+                        GatewaysStatusUpdate($m,"info");
+                        /*$msg = new YMessage("gateways");
+                        //$msg->InsertRowData($res[$i]);//ReadMsg
+                        $msg->ReadMsg($m);
+                        $msg->LogMsg();*/
                     }                    
                     $query = "DELETE FROM ext_connection WHERE expires<=" . time();
                     $res = query_nores($query);
