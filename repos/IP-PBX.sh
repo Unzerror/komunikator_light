@@ -156,6 +156,7 @@ echo "Installer: acsess rules..."
 	chown -R yate:yate /var/lib/misc/records /var/lib/misc/records/leg
 	chmod +x /usr/share/yate/scripts/*
 	chmod 755 -R /var/lib/misc/moh/ /var/lib/misc/auto_attendant/ /var/lib/misc/records/
+	echo "yate ALL = NOPASSWD: /sbin/iptables" >> /etc/sudoers
 
 echo "Installer: restart service..."
 	systemctl daemon-reload
