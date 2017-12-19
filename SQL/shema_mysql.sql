@@ -120,11 +120,12 @@ CREATE TABLE `call_back` (
 DROP TABLE IF EXISTS `call_logs`;
 
 CREATE TABLE `call_logs` (
-  `time` decimal(17,3) NOT NULL,
-  `chan` varchar(300) DEFAULT NULL,
+  `time` decimal(17,4) NOT NULL,
+  `chan` varchar(300) NOT NULL,
   `address` varchar(40) DEFAULT NULL,
-  `direction` varchar(350) DEFAULT NULL,
-  `billid` varchar(20) DEFAULT NULL,
+  `direction` varchar(50) DEFAULT NULL,
+  `billid` varchar(20) NOT NULL,
+  `callbillid` varchar(20) NOT NULL,
   `caller` varchar(20) DEFAULT NULL,
   `called` varchar(20) DEFAULT NULL,
   `duration` decimal(7,3) DEFAULT NULL,
@@ -134,6 +135,8 @@ CREATE TABLE `call_logs` (
   `reason` varchar(64) DEFAULT NULL,
   `ended` tinyint(1) DEFAULT NULL,
   `gateway` varchar(1024) DEFAULT NULL,
+  `callid` varchar(1024) DEFAULT NULL,
+  PRIMARY KEY (`billid`,`chan`),
   UNIQUE KEY `time_indx` (`time`) USING HASH,
   KEY `billid_indx` (`billid`) USING BTREE
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
@@ -381,7 +384,8 @@ DROP TABLE IF EXISTS `group_priority`;
 CREATE TABLE `group_priority` (
   `group_id` int(11) NOT NULL,
   `extension_id` int(11) NOT NULL,
-  `priority` int(11) NOT NULL
+  `priority` int(11) NOT NULL,
+  PRIMARY KEY (`group_id`,`extension_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
 
@@ -404,6 +408,7 @@ CREATE TABLE `groups` (
   `prompt` text,
   `detail` tinyint(1) DEFAULT NULL,
   `playlist_id` int(11) DEFAULT NULL,
+  `last_priority` int(3) NOT NULL DEFAULT '0',
   PRIMARY KEY (`group_id`),
   UNIQUE KEY `group` (`group`),
   UNIQUE KEY `extension` (`extension`) USING BTREE
@@ -862,3 +867,243 @@ VALUES
 (NULL, 'international_calls_live', 'yes', NULL);
 
 UNLOCK TABLES;
+
+
+--
+-- Table structure for table `call_group_history`
+--
+
+DROP TABLE IF EXISTS `call_group_history`;
+
+CREATE TABLE `call_group_history` (
+  `time` decimal(17,4) NOT NULL,
+  `chan` varchar(300) NOT NULL,
+  `called` varchar(2) DEFAULT NULL,
+  `billid` varchar(20) DEFAULT NULL,
+  PRIMARY KEY (`time`,`chan`),
+  UNIQUE KEY `time_indx` (`time`) USING HASH
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+
+--
+-- Table structure for table `call_rec`
+--
+
+DROP TABLE IF EXISTS `call_rec`;
+
+CREATE TABLE `call_rec` (
+  `start` decimal(17,4) NOT NULL,
+  `duration` decimal(6,2) DEFAULT NULL,
+  `record` varchar(32) NOT NULL,
+  `part` int(11) NOT NULL DEFAULT '0',
+  `connect_type` varchar(10) DEFAULT 'call',
+  `peer_count` int(11) NOT NULL DEFAULT '2',
+  `called` varchar(1024) DEFAULT NULL,
+  `chan` varchar(300) NOT NULL,
+  `close` int(11) NOT NULL DEFAULT '0',
+  UNIQUE KEY `record_indx` (`record`,`part`,`chan`) USING HASH
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+
+--
+-- Table structure for table `call_rec`
+--
+
+DROP TABLE IF EXISTS `call_rec`;
+
+
+CREATE TABLE `ext_connection` (
+  `extension_id` int(11) NOT NULL,
+  `extension` varchar(3) NOT NULL,
+  `prelocation` text,
+  `location` varchar(200) NOT NULL,
+  `expires` decimal(17,3) NOT NULL,
+  `inuse_count` int(2) NOT NULL DEFAULT '0',
+  `video_supply` tinyint(4) DEFAULT NULL,
+  `acodec` text,
+  `vcodec` text,
+  PRIMARY KEY (`extension`,`location`),
+  UNIQUE KEY `location` (`location`) USING BTREE,
+  KEY `extension` (`extension`) USING BTREE
+) ENGINE=MyISAM DEFAULT CHARSET=utf8
+
+--
+-- Table structure for table `call_route`
+--
+
+DROP TABLE IF EXISTS `call_route`;
+
+CREATE TABLE `call_route` (
+  `time` decimal(17,4) NOT NULL,
+  `chan` varchar(300) DEFAULT NULL,
+  `direction` varchar(350) DEFAULT NULL,
+  `billid` varchar(20) DEFAULT NULL,
+  `caller` varchar(20) DEFAULT NULL,
+  `called` varchar(20) DEFAULT NULL,
+  `duration` decimal(7,3) DEFAULT NULL,
+  `status` varchar(64) DEFAULT NULL,
+  `reason` varchar(64) DEFAULT NULL,
+  UNIQUE KEY `time_indx` (`time`) USING HASH,
+  KEY `billid_indx` (`billid`) USING BTREE
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+
+--
+-- Table structure for table `chan_start`
+--
+
+DROP TABLE IF EXISTS `chan_start`;
+
+CREATE TABLE `chan_start` (
+  `start` decimal(17,4) DEFAULT NULL,
+  `hangup` decimal(17,4) DEFAULT NULL,
+  `chan` varchar(300) NOT NULL,
+  `billid` varchar(20) NOT NULL,
+  `callbillid` varchar(20) DEFAULT NULL,
+  `callnumber` varchar(20) DEFAULT NULL,
+  `callid` varchar(1024) DEFAULT NULL,
+  `direction` varchar(350) DEFAULT NULL,
+  PRIMARY KEY (`billid`,`chan`),
+  KEY `billid_indx` (`billid`) USING BTREE
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+
+--
+-- Table structure for table `chan_switch`
+--
+
+DROP TABLE IF EXISTS `chan_switch`;
+
+CREATE TABLE `chan_switch` (
+  `connect` decimal(17,4) NOT NULL,
+  `disconnect` decimal(17,4) DEFAULT NULL,
+  `answer` decimal(17,4) DEFAULT NULL,
+  `chan` varchar(300) NOT NULL,
+  `peerid` varchar(300) DEFAULT NULL,
+  `targetid` varchar(300) DEFAULT NULL,
+  `billid` varchar(20) DEFAULT NULL,
+  `callbillid` varchar(20) DEFAULT NULL,
+  `caller` varchar(20) DEFAULT NULL,
+  `called` varchar(20) DEFAULT NULL,
+  `caller_gateway` varchar(1024) DEFAULT NULL,
+  `called_gateway` varchar(1024) DEFAULT NULL,
+  `caller_type` varchar(20) DEFAULT NULL,
+  `called_type` varchar(20) DEFAULT NULL,
+  `status` varchar(64) DEFAULT NULL,
+  `reason` varchar(64) DEFAULT NULL,
+  UNIQUE KEY `connect_indx` (`chan`,`connect`) USING HASH,
+  KEY `chan_indx` (`chan`),
+  KEY `billid_indx` (`billid`)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+
+--
+-- View `activ_channels`
+--
+
+CREATE OR REPLACE 
+VIEW `activ_channels` 
+AS SELECT 
+   `time`, `chan`, `address`, `direction`, `billid`, `callbillid`,
+  `caller`, `called`, `duration`, `billtime`, `ringtime`, `status`,
+  `reason`, `ended`, `gateway`, `callid`,
+   IF(`direction`='incoming',`caller`,`called`) as `callnumber`,
+   ROUND(UNIX_TIMESTAMP()-`time`) as `fullduration`,
+   IF((`billtime`>0)or(`status`='answered'),ROUND(UNIX_TIMESTAMP()-`time`-`ringtime`),0) as `callduration`
+FROM call_logs WHERE ended = '0';
+
+
+--
+-- View `activ_conf_room`
+--
+
+CREATE OR REPLACE 
+VIEW `activ_conf_room`
+AS 
+SELECT 
+ac.start as start,
+c.connect,
+ROUND(UNIX_TIMESTAMP()-c.connect) as duration,
+c.chan,c.targetid, c.billid, ac.callbillid, ac.root_peer, c.caller as caller, c.called as called
+FROM chan_switch c
+LEFT JOIN (SELECT min(connect) as start,chan as root_peer,peerid,targetid,callbillid
+           FROM chan_switch 
+           WHERE peerid LIKE 'conf/%' 
+                and ((disconnect IS NULL) or (disconnect=0))
+		  GROUP BY targetid,callbillid) ac
+ON c.targetid=ac.targetid
+WHERE c.peerid LIKE 'conf/%' 
+      and ((c.disconnect IS NULL) or (c.disconnect=0))
+UNION
+SELECT NULL as start, NULL as connect, NULL as duration, NULL as chan, 
+	  SUBSTRING(d.destination,6,100) as targetid, NULL as billid, NULL as callbillid, NULL as root_peer, 
+      NULL as caller, d.number as called 
+FROM dids d WHERE d.destination LIKE 'conf/%' 
+and NOT EXISTS (SELECT * FROM chan_switch cs WHERE cs.peerid LIKE 'conf/%' and ((cs.disconnect IS NULL) or (cs.disconnect=0))
+                                     and SUBSTRING(d.destination,6,100) = cs.targetid)
+UNION                                     
+SELECT min(i.connect) as start, NULL as connect, NULL as duration,
+	   NULL as chan, i.targetid, i.callbillid as billid, i.callbillid as callbillid, NULL as root_peer, NULL as caller, i.called
+FROM activ_channels p, chan_switch i
+WHERE i.billid = p.billid and i.chan = p.chan
+      and i.peerid LIKE 'conf/%' and i.disconnect is NOT NULL
+and NOT EXISTS (SELECT * FROM chan_switch cs1 WHERE cs1.peerid LIKE 'conf/%' and ((cs1.disconnect IS NULL) or (cs1.disconnect=0))
+                                     and cs1.targetid = i.targetid)
+GROUP BY i.targetid,i.callbillid;
+
+
+--
+-- View `activ_connections`
+--
+
+CREATE OR REPLACE 
+VIEW `activ_connections`
+AS SELECT 
+   connect,
+   disconnect,
+   answer,
+   IF (disconnect is NULL, ROUND(UNIX_TIMESTAMP()- connect), disconnect - connect) as duration,
+   IF (answer is NULL, 0, IF (disconnect is NULL, ROUND(UNIX_TIMESTAMP()-answer), disconnect - answer)) as callduration,   
+   id,
+   peerid,
+   targetid,   
+   billid,
+   callbillid,
+   caller,
+   called,
+   caller_gateway,
+   called_gateway,
+   caller_type,
+   called_type,
+   status,
+   reason
+FROM chan_switch WHERE callbillid in
+(SELECT callbillid FROM chan_switch WHERE disconnect is NULL) or disconnect is NULL;
+
+
+--
+-- View `activ_queue`
+--
+
+CREATE OR REPLACE 
+VIEW `activ_queue`
+AS
+SELECT 
+NULL as connect, NULL as duration, NULL as chan, NULL as peerid, 
+groups.group_id as targetid,
+NULL as billid, NULL as callbillid, 
+NULL as caller, 
+groups.extension as called
+FROM groups
+WHERE groups.extension is NOT NULL
+UNION
+SELECT
+connect,
+ROUND(UNIX_TIMESTAMP()-connect) as duration,
+chan,peerid,targetid,billid,
+callbillid, caller, called
+           FROM chan_switch
+           WHERE peerid LIKE 'q-in/%' 
+                and ((disconnect IS NULL) or (disconnect=0))
+		   GROUP BY targetid
+           ORDER BY targetid, connect;
