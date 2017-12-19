@@ -906,10 +906,10 @@ CREATE TABLE `call_rec` (
 
 
 --
--- Table structure for table `call_rec`
+-- Table structure for table `ext_connection`
 --
 
-DROP TABLE IF EXISTS `call_rec`;
+DROP TABLE IF EXISTS `ext_connection`;
 
 
 CREATE TABLE `ext_connection` (
@@ -925,7 +925,7 @@ CREATE TABLE `ext_connection` (
   PRIMARY KEY (`extension`,`location`),
   UNIQUE KEY `location` (`location`) USING BTREE,
   KEY `extension` (`extension`) USING BTREE
-) ENGINE=MyISAM DEFAULT CHARSET=utf8
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
 --
 -- Table structure for table `call_route`
@@ -1062,9 +1062,9 @@ AS SELECT
    connect,
    disconnect,
    answer,
-   IF (disconnect is NULL, ROUND(UNIX_TIMESTAMP()- connect), disconnect - connect) as duration,
-   IF (answer is NULL, 0, IF (disconnect is NULL, ROUND(UNIX_TIMESTAMP()-answer), disconnect - answer)) as callduration,   
-   id,
+   IF ((disconnect is NULL) or (disconnect=0), ROUND(UNIX_TIMESTAMP()- connect), disconnect - connect) as duration,
+   IF ((answer is NULL) or (answer=0), 0, IF ((disconnect is NULL) or (disconnect=0), ROUND(UNIX_TIMESTAMP()-answer), disconnect - answer)) as callduration,   
+   chan,
    peerid,
    targetid,   
    billid,
@@ -1078,7 +1078,7 @@ AS SELECT
    status,
    reason
 FROM chan_switch WHERE callbillid in
-(SELECT callbillid FROM chan_switch WHERE disconnect is NULL) or disconnect is NULL;
+(SELECT callbillid FROM chan_switch WHERE disconnect is NULL or disconnect=0) or disconnect is NULL or disconnect=0;
 
 
 --
