@@ -356,7 +356,7 @@ Ext.define('app.Viewport', {
                     ]
                 }),
                 
-                 Ext.create('app.Card_Panel', {
+                 /*Ext.create('app.Card_Panel', {
                  // id:'modules',
                  title: app.msg.modules, // Модули
                  items: [
@@ -367,7 +367,7 @@ Ext.define('app.Viewport', {
                  title: app.msg.mail_settings  // Почтовые уведомления
                  })
                  ]
-                 })
+                 })*/
                  
                 /*
                  { 
