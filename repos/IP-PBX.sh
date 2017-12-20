@@ -56,6 +56,7 @@ echo "Installer: Configuring the database..."
     mysql -uroot -p$dbuserpw kommunikator < ~/$repo_name/SQL/shema_mysql.sql
     mysql -uroot -p$dbuserpw -e "GRANT ALL PRIVILEGES ON * . * TO 'kommunikator'@'localhost';"
 	mysql -uroot -p$dbuserpw -e "FLUSH PRIVILEGES;"
+	mysql -uroot -p$dbuserpw -e "SET GLOBAL sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));"
 
 echo "Installer: Configuring web server..."
 	pear install DB
