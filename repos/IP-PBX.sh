@@ -152,10 +152,10 @@ echo "Installer: Trying to generate SSL certificate..."
 
 echo "Installer: acsess rules..."
 	mkdir -p /var/lib/misc/records/  /var/lib/misc/records/leg
-	chown -R www-data:www-data /var/lib/misc/moh /var/lib/misc/auto_attendant /var/lib/misc/records/
+	chown -R www-data:www-data /var/lib/misc/moh /var/lib/misc/auto_attendant /var/lib/misc/records /var/www/kommunikator
 	chown -R yate:yate /var/lib/misc/records /var/lib/misc/records/leg
 	chmod +x /usr/share/yate/scripts/*
-	chmod 755 -R /var/lib/misc/moh/ /var/lib/misc/auto_attendant/ /var/lib/misc/records/
+	chmod 755 -R /var/lib/misc/moh /var/lib/misc/auto_attendant /var/lib/misc/records /var/www/kommunikator
 	echo "yate ALL = NOPASSWD: /sbin/iptables" >> /etc/sudoers
 
 echo "Installer: restart service..."
