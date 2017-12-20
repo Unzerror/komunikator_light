@@ -233,10 +233,10 @@ Ext.define('app.Viewport', {
                         Ext.create('app.module.Users_Grid', {
                             title: app.msg.users  // Управление доступом
                         }),
-                        Ext.create('app.module.Network_Settings_Panel', {
+                        /*Ext.create('app.module.Network_Settings_Panel', {
                             title: app.msg.network_settings  // Сетевые настройки
-                        }),/*
-                        Ext.create('app.module.Tuning_Modules_Grid', {
+                        }),*/
+                        /*Ext.create('app.module.Tuning_Modules_Grid', {
                             title: app.msg.modules  // Модули
                         }),*/
                         Ext.create('app.module.Extra_Grid', {
