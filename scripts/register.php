@@ -171,6 +171,7 @@ class YMessage {
                   $operation = "no_sql";
        }
        
+       $sql_data = array_diff($sql_data, array(''));
        if ($operation == "insert") {
             $query = "INSERT INTO ".$msg_keys[$this->type]["sql_table"]." (`".implode("`, `", array_keys($sql_data))."`) VALUES ('".implode("', '", $sql_data)."')";    
        } elseif ($operation == "update" or $operation == "delete") {            
@@ -1607,8 +1608,9 @@ for (;;) {
                     $ev->handled = true;
                     break;
                 default:
-                    if (!MsgHandler($ev))
-
+                    /*if (!MsgHandler($ev))
+                        debug("[".$ev->name."] Skip Events!!!");*/
+                    MsgHandler($ev);
                     break;
 				}
             // This is extremely important.
