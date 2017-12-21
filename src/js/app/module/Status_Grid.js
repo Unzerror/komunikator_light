@@ -120,11 +120,11 @@ Ext.define('app.module.Status_Grid', {
             }
         }
 
-       if(colIndex == 0){
+       /*if(colIndex == 0){
             if(record.data.name == 'plugin_Chrome'){
                  return '<a href="https://chrome.google.com/webstore/detail/komunikator-panel/gjdhioccnagaekejaofibhhagmkbjbdh" target="_blank">' + value + '</a>';
             }
-        }
+       }*/
 
         return value;
     },

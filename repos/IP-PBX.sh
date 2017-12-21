@@ -85,7 +85,7 @@ echo "Installer: Configuring web server..."
         }
 	}"
 	if [ -e "$fe" ]; then
-	cp $fe $fe".bak"
+	cp $fe $fe"_komunikator.bak"
 	fi
 	echo "$e" > "$fe"
 

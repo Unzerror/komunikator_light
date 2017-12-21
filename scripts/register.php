@@ -232,6 +232,9 @@ class YMessage {
               $this->param[$key] = isset($row_data[$key]) ? $row_data[$key] : NULL;
     }
 
+    function LogMsg($InitStr = "") {
+        debug("msg[".$this->type."]='".implode("','", $this->param)."'");
+    }
 }
 
 //Данные для обработки
@@ -466,6 +469,10 @@ class ActivObjects
         return $res;
     }
 
+    function LogTable()  {
+        foreach ($this->events as $indx=>$data)
+           debug($this->type."[".$indx."]='".implode("','", $data)."'");
+    }
 
     //получение msg из строки для SQL
     function GetMsgFromRow($row, $type, $dtype="normal") {        
@@ -1600,7 +1607,8 @@ for (;;) {
                     $ev->handled = true;
                     break;
                 default:
-                    //if (!MsgHandler($ev))
+                    if (!MsgHandler($ev))
+
                     break;
 				}
             // This is extremely important.

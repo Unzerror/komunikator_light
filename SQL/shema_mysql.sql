@@ -943,6 +943,31 @@ CREATE TABLE `call_route` (
   KEY `billid_indx` (`billid`) USING BTREE
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
+--
+-- Table structure for table `history`
+--
+
+DROP TABLE IF EXISTS `history`;
+
+CREATE TABLE `history` (
+  `connect` decimal(17,4) NOT NULL,
+  `duration` int DEFAULT NULL,
+  `connect_type` varchar(20) DEFAULT NULL,
+  `callbillid` varchar(20) DEFAULT NULL,
+  `caller` varchar(1024) DEFAULT NULL,
+  `called` varchar(20) DEFAULT NULL,
+  `caller_gateway` varchar(120) DEFAULT NULL,
+  `called_gateway` varchar(120) DEFAULT NULL,
+  `caller_type` varchar(10) DEFAULT NULL,
+  `called_type` varchar(10) DEFAULT NULL,
+  `status` varchar(20) DEFAULT NULL,
+  `reason` varchar(20) DEFAULT NULL,
+  `record` varchar(32) DEFAULT NULL,
+  `ended` tinyint(1) DEFAULT NULL,
+  UNIQUE KEY `connect_indx` (`connect`) USING HASH,
+  KEY `callbillid_indx` (`callbillid`) USING BTREE
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
 
 --
 -- Table structure for table `chan_start`
