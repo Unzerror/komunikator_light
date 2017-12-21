@@ -343,23 +343,6 @@ CREATE TABLE `gateways` (
   PRIMARY KEY (`gateway_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
-LOCK TABLES `gateways` WRITE;
-
-INSERT INTO `gateways` (
-  `gateway_id`, `gateway`, `protocol`, `server`, `type`,
-  `username`, `password`, `enabled`, `description`, `interval`,
-  `authname`, `domain`, `outbound`, `localaddress`, `formats`,
-  `rtp_localip`, `ip_transport`, `oip_transport`, `port`, `iaxuser`,
-  `iaxcontext`, `rtp_forward`, `status`, `modified`, `callerid`,
-  `callername`, `send_extension`, `trusted`, `sig_trunk_id`
-)
-VALUES 
-(1, 'webrtc2sip', 'sip', '172.17.2.113', NULL, 'webrtc2sip', 'webrtc2sip', 0, 'webrtc2sip',
- NULL, 'webrtc2sip', 'webrtc2sip', NULL, NULL, NULL, NULL, 'UDP', NULL, NULL, NULL, NULL,
- NULL, '', 0, 'webrtc2sip', NULL, NULL, 1, NULL);
-
-UNLOCK TABLES;
-
 --
 -- Table structure for table `group_members`
 --
@@ -781,11 +764,11 @@ INSERT INTO `time_frames` (
 )
 VALUES
 (NULL, '1', 'Sunday',     NULL, NULL, '0'),
-(NULL, '1', 'Monday',     '4',  '14', '1'),
-(NULL, '1', 'Tuesday',    '4',  '14', '2'),
-(NULL, '1', 'Wednesday',  '4',  '14', '3'),
-(NULL, '1', 'Thursday',   '4',  '14', '4'),
-(NULL, '1', 'Friday',     '4',  '14', '5'),
+(NULL, '1', 'Monday',     '5',  '14', '1'),
+(NULL, '1', 'Tuesday',    '5',  '14', '2'),
+(NULL, '1', 'Wednesday',  '5',  '14', '3'),
+(NULL, '1', 'Thursday',   '5',  '14', '4'),
+(NULL, '1', 'Friday',     '5',  '14', '5'),
 (NULL, '1', 'Saturday',   NULL, NULL, '6');
 
 UNLOCK TABLES;
@@ -858,13 +841,26 @@ INSERT INTO `settings` (
 )
 VALUES 
 (NULL, 'vm', 'external/nodata/leavemaildb.php', NULL), 
-(NULL, 'version', '1', NULL), 
+(NULL, 'version', '1.5.a0', NULL), 
 (NULL, 'annonymous_calls', 'yes', NULL), 
 (NULL, 'callername', NULL, NULL), 
 (NULL, 'prefix', NULL, NULL), 
 (NULL, 'callerid', NULL, NULL), 
 (NULL, 'international_calls', 'yes', NULL), 
-(NULL, 'international_calls_live', 'yes', NULL);
+(NULL, 'international_calls_live', 'yes', NULL),
+(NULL, 'debug', 1, 'register'), 
+(NULL, 'query', 1, 'register'), 
+(NULL, 'debug', 1, 'route'), 
+(NULL, 'query', 1, 'route'), 
+(NULL, 'debug', 1, 'record'), 
+(NULL, 'query', 1, 'record'), 
+(NULL, 'debug', 1, 'leavemaildb'), 
+(NULL, 'query', 1, 'leavemaildb'), 
+(NULL, 'debug', 1, 'voicemaildb'), 
+(NULL, 'query', 1, 'voicemaildb'), 
+(NULL, 'debug', 1, 'auto_attendant'), 
+(NULL, 'query', 1, 'auto_attendant'), 
+(NULL, 'cs_attendant', 'external/nodata/auto_attendant.php', NULL);
 
 UNLOCK TABLES;
 
