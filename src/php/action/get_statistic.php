@@ -142,27 +142,27 @@ function lastDayToTimestamp() {
 
 $cur_date = lastDayToTimestamp(); {
     $status = 'offline';
-    $query = "select prompt_id, day, start_hour, end_hour, numeric_day FROM time_frames";
+    $day_week = date('w') ;
+    $hour = date('H') * 1;
+    
+    $query = "select start_hour, end_hour FROM time_frames";
     $res = query_to_array($query);
     if (count($res)) {
-        $v_day = exec("date '+%w'");
-        $day_week = $v_day;
-        //$hour = date('H') * 1; 
-        $v_time = exec("date '+%H'");
-
-        //echo("Current week index '$day_week' : hour '$hour'");
-        //$day_week = 2;
-        //$hour = 19;
-        $status = 'offline';
-        foreach ($res as $row)
-        /*     if ($row["numeric_day"] == $day_week && $row["start_hour"] <= $hour && $v_time < $row["end_hour"])
-          $status = 'online'; */ {
-            $hour_start = 1 * $row["start_hour"] + (-$_SESSION['time_offset'] / 60);
-            $hour_end = 1 * $row["end_hour"] + (-$_SESSION['time_offset'] / 60);
-            if ($row["numeric_day"] == $day_week && $hour_start <= $v_time && $v_time < $hour_end)
+        $res1[0] = $res[$day_week];
+        $next_day = ($day_week + 1) % 7;
+        $perv_day = ($day_week + 6) % 7;
+        if ($res[$next_day]["start_hour"] < 0) {
+            $res1[1]["start_hour"] = $res[$next_day]["start_hour"] + 24;
+            $res1[1]["end_hour"] = $res[$next_day]["end_hour"] + 24;
+        } elseif ($res[$perv_day]["end_hour"] > 24) {
+            $res1[1]["start_hour"] = $res[$perv_day]["start_hour"] - 24;                             
+            $res1[1]["end_hour"] = $res[$perv_day]["end_hour"] - 24;
+        }
+        foreach ($res1 as $row) {
+            if ($row["start_hour"] <= $hour && $hour < $row["end_hour"])
                 $status = 'online';
         }
-    };
+    }
 }
 
 $f_data[] = array('status', $status);
