@@ -26,7 +26,7 @@ echo "Installer: Generating and setting the DB user passwords..."
 	apt install -y mysql-server
 
 echo "Installer: Installing some tools and dependencies..."
-	apt install -y libmysqlclient20 libgcc1 libmysqlclient20 libstdc++6 libc6 libcap2-bin ssh adduser libyate5.2.0 yate-core madplay lame ntp nginx php-fpm php-cli php-db php-mysql
+	apt install -y libmysqlclient20 libgcc1 libmysqlclient20 libstdc++6 libc6 libcap2-bin ssh adduser libyate5.2.0 yate-core madplay lame sox ntp nginx php-fpm php-cli php-db php-mysql
 
 echo "Installer: Installing the distro packages..."
 if [ "$arch" = 'x86_64' ]
@@ -152,11 +152,11 @@ echo "Installer: Trying to generate SSL certificate..."
 	fi
 
 echo "Installer: acsess rules..."
-	mkdir -p /var/lib/misc/records/  /var/lib/misc/records/leg
-	chown -R www-data:www-data /var/lib/misc/moh /var/lib/misc/auto_attendant /var/lib/misc/records /var/www/kommunikator
+	mkdir -p /var/lib/misc/records/leg
+	chown -R www-data:www-data /var/lib/misc/moh /var/lib/misc/auto_attendant
 	chown -R yate:yate /var/lib/misc/records /var/lib/misc/records/leg
 	chmod +x /usr/share/yate/scripts/*
-	chmod 755 -R /var/lib/misc/moh /var/lib/misc/auto_attendant /var/lib/misc/records /var/www/kommunikator
+	chmod 755 -R /var/lib/misc/records /var/lib/misc/records/leg
 	echo "yate ALL = NOPASSWD: /sbin/iptables" >> /etc/sudoers
 
 echo "Installer: restart service..."

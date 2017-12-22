@@ -109,6 +109,6 @@ echo "Error lame command"
 exit 3
 fi
 
-chown www-data $mp3_file
+#chown www-data $mp3_file
 exit 0
 #echo "Done "
