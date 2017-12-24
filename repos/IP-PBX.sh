@@ -56,7 +56,7 @@ echo "Installer: Configuring the database..."
     mysql -uroot -p$dbuserpw kommunikator < ~/$repo_name/SQL/shema_mysql.sql
     mysql -uroot -p$dbuserpw -e "GRANT ALL PRIVILEGES ON * . * TO 'kommunikator'@'localhost';"
 	mysql -uroot -p$dbuserpw -e "FLUSH PRIVILEGES;"
-	mysql -uroot -p$dbuserpw -e "SET GLOBAL sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));"
+	#mysql -uroot -p$dbuserpw -e "SET GLOBAL sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''));"
 
 echo "Installer: Configuring web server..."
 	pear install DB
@@ -64,6 +64,13 @@ echo "Installer: Configuring web server..."
 	sed -i "s/# Required-Start:    \$remote_fs \$network/# Required-Start:    \$remote_fs \$network mysql php7.0-fpm/" /etc/init.d/yate
 	sed -i "s/;cgi.fix_pathinfo=1/cgi.fix_pathinfo=0/" /etc/php/7.0/fpm/php.ini
 	sed -i "/types_hash_max_size/ a\ \t client_max_body_size 50m;" /etc/nginx/nginx.conf
+
+#mysql config no_group_data
+fe="/etc/mysql/my.cnf"
+e="
+[mysqld]
+sql_mode = STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
+echo "$e" >> "$fe"
 
 	#nginx www config
 	fe="/etc/nginx/sites-available/default"
@@ -163,6 +170,7 @@ echo "Installer: restart service..."
 	systemctl daemon-reload
 	service yate stop
 	service nginx reload
+	service mysql restart
 	service php7.0-fpm restart
 	service yate start
 
