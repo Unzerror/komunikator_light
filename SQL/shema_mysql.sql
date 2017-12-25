@@ -299,6 +299,8 @@ CREATE TABLE `extensions` (
   `inuse_count` int(11) DEFAULT NULL,
   `inuse_last` decimal(17,3) DEFAULT NULL,
   `login_attempts` int(11) DEFAULT NULL,
+  `line_limit` tinyint(3) DEFAULT 1,
+  `full_limit` tinyint(3) DEFAULT 1,
   PRIMARY KEY (`extension_id`),
   UNIQUE KEY `extension` (`extension`),
   KEY `extension_id` (`extension_id`)
@@ -915,6 +917,7 @@ CREATE TABLE `ext_connection` (
   `location` varchar(200) NOT NULL,
   `expires` decimal(17,3) NOT NULL,
   `inuse_count` int(2) NOT NULL DEFAULT '0',
+  `line_limit` tinyint(3) DEFAULT 1,
   `video_supply` tinyint(4) DEFAULT NULL,
   `acodec` text,
   `vcodec` text,
