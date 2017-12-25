@@ -133,7 +133,7 @@ CREATE TABLE `call_logs` (
   `ringtime` decimal(7,3) DEFAULT NULL,
   `status` varchar(64) DEFAULT NULL,
   `reason` varchar(64) DEFAULT NULL,
-  `ended` tinyint(1) DEFAULT NULL,
+  `ended` tinyint(1) DEFAULT 0,
   `gateway` varchar(1024) DEFAULT NULL,
   `callid` varchar(1024) DEFAULT NULL,
   PRIMARY KEY (`billid`,`chan`),
