@@ -1146,9 +1146,10 @@ SELECT  ext.extension_id,ext.extension, e.location,
 from extensions ext
 LEFT JOIN
 	(SELECT extc.extension, extc.location,
-			COUNT(DISTINCT ach.time) as inuse_line, ch.inuse
+			COUNT(DISTINCT ach.time) as inuse_line,
+      IF (count(ch.inuse) is NULL, 0, count(ch.inuse))  as inuse
 	from ext_connection extc
-	join activ_channels ach
+	left join activ_channels ach
 	on extc.extension = ach.callnumber
 		and SUBSTRING_INDEX(extc.location,'\/',1) = SUBSTRING_INDEX(ach.chan,'\/',1)
 		and SUBSTRING_INDEX(extc.location,'@',-1) = ach.address
