@@ -76,15 +76,12 @@ for (;;) {
 			$ev->handled=true;
 			$query = "SELECT last_priority FROM groups WHERE group_id = '$queue'";
 		    $res = query_to_array($query);
-			//$log->debug('query='.$queue.'   result='.$res[0]["last_priority"]);
 		    if ( $res[0]['last_priority'] > 0) {		        		    
 				$called_num = substr($called, 0, 3);
-				$log->debug('called_num='.$called_num.' from:'.$called);
 				//$query = "SELECT last_priority FROM groups WHERE group_id = '$queue'";
 				$query = "SELECT priority FROM group_priority gp JOIN extensions e ON gp.extension_id = e.extension_id WHERE extension = '$called_num'";
 		        $res = query_to_array($query);
 				$priority = 1 - $res[0]['priority']; 
-				//$log->debug('priority='.$priority);
 				$query = "UPDATE groups SET last_priority = ( select max(priority)+'$priority' from group_priority where group_id= '$queue')  WHERE group_id = '$queue'" ;
 				$res=query_to_array($query);
 			}
