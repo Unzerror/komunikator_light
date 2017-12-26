@@ -63,42 +63,39 @@ $sql = <<<EOD
 SELECT * FROM (
 
     SELECT
-	ex.extension_id as id,
-
-	CASE
-		-- WHEN (SELECT count(*) FROM call_logs where caller =ex.extension and status!='unknown' and ended = false) > 1 THEN 'busy'
-		WHEN COALESCE(inuse_count,0)!=0 THEN 'busy'
-		WHEN expires is not NULL THEN 'online'
-		ELSE 'offline' END as status,
-
-	ex.extension,
-	ex.password,
-	firstname,
-	lastname,
-	ex.address,
+	ext.extension_id as id,
+    IF(acp.inuse is NULL, 'offline', IF(acp.inuse<acp.full_limit,'online','busy')) as status,    
+    ext.extension,
+    ext.password,
+   	ext.firstname,
+	ext.lastname,
+	ext.address,
 	m.group as group_name,
 	priority,
 	fwd.value as forward,
 	fwd_busy.value as forward_busy,
 	fwd_no_answ.value as forward_noanswer,
 	no_answ_to.value as noanswer_timeout
-    FROM extensions ex
+    FROM extensions ext
 
+    LEFT JOIN activ_peers acp
+    on ext.extension = acp.extension
     LEFT JOIN group_members gm
-	on ex.extension_id = gm.extension_id
+	on ext.extension_id = gm.extension_id
     LEFT JOIN groups m
 	on gm.group_id = m.group_id
     LEFT JOIN group_priority gp
-	on ex.extension_id = gp.extension_id
+	on ext.extension_id = gp.extension_id
     LEFT JOIN pbx_settings fwd
-	on fwd.extension_id = ex.extension_id and fwd.param = "forward"
+	on fwd.extension_id = ext.extension_id and fwd.param = "forward"
     LEFT JOIN pbx_settings fwd_busy
-	on fwd_busy.extension_id = ex.extension_id and fwd_busy.param = "forward_busy"
+	on fwd_busy.extension_id = ext.extension_id and fwd_busy.param = "forward_busy"
     LEFT JOIN pbx_settings fwd_no_answ
-	on fwd_no_answ.extension_id = ex.extension_id and fwd_no_answ.param = "forward_noanswer"
+	on fwd_no_answ.extension_id = ext.extension_id and fwd_no_answ.param = "forward_noanswer"
     LEFT JOIN pbx_settings no_answ_to
-	on no_answ_to.extension_id = ex.extension_id and no_answ_to.param = "noanswer_timeout"
-
+	on no_answ_to.extension_id = ext.extension_id and no_answ_to.param = "noanswer_timeout"
+    GROUP BY extension
+    
 	) a
 EOD;
 
