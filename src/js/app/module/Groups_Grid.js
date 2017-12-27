@@ -50,11 +50,18 @@
  
  *  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  */
+var priority_type = Ext.create('Ext.data.Store', { 
+    fields: ['last_priority', 'name'],             
+    data: [ 
+       {last_priority : '0', name: app.msg.priority_cicle}, 
+       {last_priority : '1', name: app.msg.cicle}
+   ] 
+});
 
 Ext.define('app.module.Groups_Grid', {
     extend: 'app.Grid',
     store_cfg: {
-        fields: ['id', 'extension', 'description', 'group'],
+        fields: ['id', 'extension', 'description', 'group','last_priority'],
         storeId: 'groups'
     },
     columns: [
@@ -81,6 +88,27 @@ Ext.define('app.module.Groups_Grid', {
                 xtype: 'textfield',
                 allowBlank: false
             }
+        },
+        {// 'last_priority'
+            width: 150,               
+            editor: {
+                xtype: 'combobox',
+                mode: 'local',                   
+                displayField: 'name',
+                valueField: 'last_priority',
+                value: '0',                
+                store: priority_type,                   
+                editable: false,
+                allowBlank: false
+            },
+            renderer: function(v) {
+                if (v == '0') {
+                     return app.msg.priority_cicle
+                }
+                else if (v == '1') {
+                     return app.msg.cicle
+                }
+            }            
         }
     ],
     initComponent: function() {

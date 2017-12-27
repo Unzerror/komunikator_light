@@ -65,7 +65,7 @@ if (!is_array($total["data"]))
     echo out(array("success" => false, "message" => $total));
 
 
-$data = compact_array(query_to_array("SELECT group_id as id, extension, description, groups.group FROM groups WHERE group_id!=1 " . get_sql_order_limit()));
+$data = compact_array(query_to_array("SELECT group_id as id, extension, description, groups.group, IF(last_priority>0, 1, 0) as last_priority FROM groups WHERE group_id!=1 " . get_sql_order_limit()));
 //file_put_contents("test.txt","SELECT group_id as id, \"group\", description, extension FROM groups ORDER BY ".get_sql_order_limit());
 
 if (!is_array($data["data"]))
