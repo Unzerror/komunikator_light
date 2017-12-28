@@ -89,7 +89,7 @@ app.msg = {
     dial_plans: 'Правила набора номера',
     users: 'Управление доступом',
     time: 'Время',
-    time_current: 'Время',
+    time_current: 'Время сервера',
     status: 'Статус',
     duration: 'Длительность',
     groups: 'Группы',

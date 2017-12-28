@@ -109,6 +109,7 @@ echo "Installer: Copy web server..."
 	cp ~/$repo_name/misc/* /var/lib/misc -Rf
 	ln -s /var/lib/misc/auto_attendant /var/www/kommunikator/auto_attendant
 	ln -s /var/lib/misc/moh /var/www/kommunikator/moh
+	ln -s /var/lib/misc/records /var/www/kommunikator/records
 
 echo "Installer: Trying to generate SSL certificate..."
 	cert_dir="/etc/yate/keys"
