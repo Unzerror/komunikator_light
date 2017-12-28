@@ -66,10 +66,18 @@ $query = NULL;
 
 
 $sql = <<<EOD
-SELECT * FROM history_temp 
+SELECT IF(callbillid<>@n, @i := @i+1, @i) as ev,connect as time, duration, connect_type, 
+caller, called, caller_gateway, called_gateway, status, record, @n:=callbillid
+FROM history, (select @i:=0,@n:=0) as z
+ORDER BY time,callbillid
 EOD;
 
-if ($_SESSION['extension']) {
+$data = compact_array(query_to_array($sql));
+$total = count($data["data"]);
+$obj = array("success" => true);
+$obj["total"] = $total;
+
+/*if ($_SESSION['extension']) {
     $exten = $_SESSION['extension'];
     $param = (get_filter() == '') ? 'WHERE' : ' AND ';
     $call = " ( caller LIKE '%($exten)%' OR called LIKE '%($exten)%')";
@@ -90,7 +98,7 @@ if (!is_array($data["data"]))
 
 $obj = array("success" => true);
 $obj["total"] = $total;
-
+*/
 /*
   $total =  compact_array(query_to_array("SELECT count(*) FROM call_logs ".get_filter()));
   if(!is_array($total["data"]))  echo out(array("success"=>false,"message"=>$total));
@@ -106,12 +114,15 @@ $f_data = array();
 foreach ($data["data"] as $row) {
     $row[1] = $row[1] - $_SESSION['time_offset'] * 60;
     $row[1] = date($date_format, $row[1]);  // $date_format = "d.m.y H:i:s"; - data.php
-    if (!file_exists('/var/lib/misc/records/' . $row[8] . '.wav')) {
+    if (!file_exists('/var/lib/misc/records/' . $row[9] . '.mp3')) {
         //проверяет существует ли запись звонка. если нет, заменяет на NULL значение полей 'record' и 'download'
-        $row[8] = NULL;
         $row[9] = NULL;
+        $row[10] = NULL;
     }
-     else $row[9]=$row[8];
+     else 
+        $row[10]=$row[9];
+    if($row[3] == "fork")
+        $row[8] = NULL;
     $f_data[] = $row;
     $f_data = translate($f_data, $_SESSION['lang'] ? $_SESSION['lang'] : 'ru');   //переводим на рус/англ
 }

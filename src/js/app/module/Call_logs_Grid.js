@@ -126,11 +126,11 @@ Ext.define('app.module.Call_logs_Grid', {
     export: true,
     store_cfg: {
         autoLoad: false,
-        fields: ['id', {
+        fields: ['ev', {
                 name: 'time',
                 type: 'date',
                 dateFormat: app.date_format
-            }, 'type', 'caller', 'called', 'duration', 'gateway', 'status', 'record', 'download'],
+            }, 'duration', 'connect_type', 'caller', 'called',  'caller_gateway', 'called_gateway', 'status', 'record', 'download'],
         storeId: 'call_history',
         sorters: [{
                 direction: 'DESC',
@@ -140,14 +140,18 @@ Ext.define('app.module.Call_logs_Grid', {
     columns: [
         {// 'id'
             width: 50,
-            xtype: 'rownumberer',
-            sortable: false
+            //xtype: 'rownumberer',
+            sortable: true
         },
         {// {'time' + 'date'}
-            width: 125,
+            width: 100,
             xtype: 'datecolumn',
             format: app.date_format,
             groupable: false
+        },
+        {// 'duration'
+            width: 100,
+            renderer: app.dhms
         },
         {// 'type'
             width: 125,
@@ -159,13 +163,13 @@ Ext.define('app.module.Call_logs_Grid', {
         {// 'called'
             width: 175
         },
-        {// 'duration'
-            width: 100,
-            renderer: app.dhms
+        {// 'gateway'
+            width: 150,
+            //renderer: app.get_info_site
         },
         {// 'gateway'
             width: 150,
-            renderer: app.get_info_site
+            //renderer: app.get_info_site
         },
         {// 'status'
             width: 150,
@@ -179,7 +183,7 @@ Ext.define('app.module.Call_logs_Grid', {
                 if (value)
                     value = '<audio style="width: 300px;display: block;-webkit-box-sizing: border-box; height: 30px;white-space: normal !important;\n\
                          line-height: 13px;border-collapse: separate;border-color: gray;" \n\
-                         type="audio/wav" src="records/' + value + '.wav?dc_=' + new Date().getTime() + '" controls autobuffer></audio>';
+                         type="audio/mp3" src="records/' + value + '.mp3?dc_=' + new Date().getTime() + '" controls autobuffer></audio>';
                 return value;
             }
         },
@@ -188,7 +192,7 @@ Ext.define('app.module.Call_logs_Grid', {
             width: 125,
             renderer: function(value) {
                 if (value)
-                    value = '<a TARGET="_blank" href="records/' + value + '.wav">' + app.msg.download + '</a>';
+                    value = '<a TARGET="_blank" href="records/' + value + '.mp3">' + app.msg.download + '</a>';
                 return value;
             }
         }
@@ -220,7 +224,7 @@ Ext.define('app.module.Call_logs_Grid', {
                             encode: 'encode',
                             local: true,
                             type: 'list',
-                            options: [['internal', app.msg['internal']], ['incoming', app.msg['incoming']], ['outgoing', app.msg['outgoing']]],
+                            options: [['qin', app.msg['qin']], ['fork', app.msg['fork']], ['call', app.msg['call']], , ['route', app.msg['route']], ['moh', app.msg['moh']]],
                             dataIndex: 'type'
                         },
                         {
