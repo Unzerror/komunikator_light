@@ -75,6 +75,8 @@ foreach ($data as $row) {
             $values_2['incoming_gateway'] = "'$value'";
         if ($key == 'server')
             $values_2['ip'] = "'$value'";
+        if ($key == 'enabled')
+            $values_1['enabled'] = ($value == 1 ? 0 : 1);
     }
     $values_1['modified'] = 1;
 }
