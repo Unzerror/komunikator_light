@@ -76,7 +76,7 @@ foreach ($data as $row) {
         if ($key == 'server')
             $values_2['ip'] = "'$value'";
         if ($key == 'enabled')
-            $values_1['enabled'] = ($value == 1 ? 0 : 1);
+            $values_1['enabled'] = ($value == 1 ? 1 : 0);
     }
     $values_1['modified'] = 1;
 }
