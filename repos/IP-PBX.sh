@@ -26,7 +26,7 @@ echo "Installer: Generating and setting the DB user passwords..."
 	apt install -y mysql-server
 
 echo "Installer: Installing some tools and dependencies..."
-	apt install -y libmysqlclient20 libgcc1 libmysqlclient20 libstdc++6 libc6 libcap2-bin ssh adduser libyate5.2.0 yate-core madplay lame sox ntp nginx php-fpm php-cli php-db php-mysql
+	apt install -y git libmysqlclient20 libgcc1 libmysqlclient20 libstdc++6 libc6 libcap2-bin ssh adduser libyate5.2.0 yate-core madplay lame sox ntp nginx php-fpm php-cli php-db php-mysql
 
 echo "Installer: Installing the distro packages..."
 if [ "$arch" = 'x86_64' ]
