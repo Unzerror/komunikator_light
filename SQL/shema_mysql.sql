@@ -320,7 +320,7 @@ CREATE TABLE `gateways` (
   `type` text,
   `username` text,
   `password` text,
-  `enabled` tinyint(1) DEFAULT NULL,
+  `enabled` tinyint(1) DEFAULT 0,
   `description` text,
   `interval` text,
   `authname` text,
