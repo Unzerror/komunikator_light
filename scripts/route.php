@@ -822,7 +822,7 @@ function return_route($called, $caller, $no_forward = false) {
     if ($already_auth != "yes" && $reason != "divert_busy" && $reason != "divert_noanswer") {
         if (!$username) {
               //$query = "SELECT * FROM extensions WHERE extension='$caller'";              //выводит в лог пароли
-              $query = "SELECT extensions_id FROM extensions WHERE extension='$caller'";
+              $query = "SELECT extension_id FROM extensions WHERE extension='$caller'";
               $res = query_to_array($query);
               if (count($res)) {
                    debug("could not auth call but '$caller' seems to be in extensions");
@@ -843,6 +843,48 @@ function return_route($called, $caller, $no_forward = false) {
         $call_type = $res[0]["call_type"]; //($username) ? "from inside" : "from outside";  // from inside/outside of freesentral
     }
     
+    //шлюзование через extension c проверкой на то что номер начинается с 7 и 11 значный
+    //можно добавить переадрессацию с шлюзов
+    if(substr($called,0,5) == 'bx24-') {
+        $query = "SELECT location FROM kommunikator.dids JOIN ext_connection ON ext_connection.extension_id=dids.extension_id WHERE dids.number='$caller' and dids.destination='external/nodata/bx24.php'";
+        $res = query_to_array($query);
+        debug("BX24 route call to $called from $caller");
+        if (!count($res)) {
+            debug("Could not find BX24 worked external gateway");        //нежно проговорить текст? : закомментировать и раскоментировать кусок в bx4.php
+            return false;
+        }
+
+        $called_num = substr($called,5);
+        $location = $res[0]["location"];
+        $gateway_location = substr($location,strrpos($location, '@'));
+        $gateway_num = substr($location,8,3);
+
+        $ev->retval = 'sip/sip:'.$called_num.$gateway_location;
+        $ev->params["caller"] = $gateway_num;
+        $ev->params["called"] = $called_num;
+        $ev->params["callername"] = $caller;
+        $ev->params["username"] = $gateway_num;
+        $ev->params["authname"] = $gateway_num;
+        $ev->handled = true;    
+        return true;
+    }
+
+    if ( (substr($called,0,1) == 7) && (strlen($called) == 11) ) {
+        $query = "SELECT * FROM kommunikator.dids WHERE dids.number='$caller' and dids.destination='external/nodata/bx24.php'";
+        $res = query_to_array($query);
+        if ( count($res)) {
+            $replaced_num = $res[0]["description"];
+            if ( is_numeric($replaced_num) )        
+                $ev->params["called"] = $replaced_num.substr($called,1);
+
+            //makeRoutePhat($called,"DiD");
+            $ev->params["query_on"] = ($query_on) ? "yes" : "no";
+            $ev->params["debug_on"] = ($debug_on) ? "yes" : "no";
+            set_retval($res[0]["destination"]);
+            return true;
+        }
+    }
+
     ChekNextRoute($caller,$called);
 
     debug("classified call as being '$call_type'");
